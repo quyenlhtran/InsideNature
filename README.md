@@ -1,6 +1,6 @@
 # Inside Nature
 
-An explorable 3D ecosystem with 15 discoverable animals and plants across freshwater, woodland, and open-sky biomes. A server-side NVIDIA NIM guide personalizes the welcome and each field note around the visitor's interests and preferred explanation style.
+An educational 3D platform with two modes: a ready-made Inside Nature beginner game and an image-to-scene creator. Students can explore 15 animals and plants or upload a PNG/JPEG diagram or nature image and receive an interactive 3D interpretation.
 
 ## Run locally
 
@@ -25,6 +25,16 @@ id live in `app.config.mjs`.
 - `E`: open the nearby focused animal or plant
 - Biome buttons: jump between water, woodland, and sky
 
+In a generated scene, click an object or aim at it and press `E` to read its description.
+
+## Image-to-scene creator
+
+The creator resizes the uploaded image in the browser, sends it to the server-only `/api/scene` route, and asks the configured NVIDIA vision model for a declarative `SceneSpec`. The server validates and limits every object before the browser sees it. The browser renderer supports a safe set of reusable shapes, labels, colors, and animations; it never executes model-generated code.
+
+The default vision model is `meta/llama-3.2-11b-vision-instruct`. Change `NVIDIA_VISION_MODEL` in `app.config.mjs` to use another image-capable NVIDIA model. Without an API key, the creator provides a starter scene, including a volcano fallback when the filename mentions a volcano, eruption, magma, or lava.
+
+A generated scene is an educational interpretation of the visible image, not an exact reconstruction of hidden 3D geometry.
+
 ## NVIDIA guide
 
 The server calls NVIDIA's OpenAI-compatible `POST /v1/chat/completions` endpoint. The default is the fast `openai/gpt-oss-20b` model hosted by NVIDIA NIM; switch `NVIDIA_MODEL` in `app.config.mjs` to another model available to your NVIDIA account. The API key never enters the browser bundle. If the key is missing or the service is unavailable, the experience uses its built-in field-guide copy instead.
@@ -33,8 +43,11 @@ AI code is kept separate from the game runtime:
 
 - `server/ai/prompts.mjs`: every server-side system prompt, user prompt, and fallback message
 - `server/ai/guide.mjs`: NVIDIA requests, response parsing, and `/api/personalize` handling
+- `server/ai/scene.mjs`: vision request, `SceneSpec` validation, and `/api/scene` handling
 - `server/ai/speech.mjs`: ElevenLabs text-to-speech handling
 - `src/ai/guide.ts`: browser requests, stream parsing, quiz validation, and local quiz fallback
+- `src/ai/scene.ts`: upload preparation and image-to-scene requests
+- `src/world/generated-scene.ts`: generic `SceneSpec`-to-Three.js renderer
 - `server.mjs`: server startup and route wiring only
 
 Start in `server/ai/prompts.mjs` when reviewing or changing the AI's voice, reading level, or output rules.

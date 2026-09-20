@@ -9,6 +9,9 @@ export const GUIDE_SYSTEM_PROMPT =
 export const QUIZ_SYSTEM_PROMPT =
   'You are Inside Nature, a fun and accurate guide for school-age students. Keep all language easy to understand. Return valid JSON only.';
 
+export const SCENE_SYSTEM_PROMPT =
+  'You turn educational images into safe, interactive 3D scene descriptions for students. Return strict JSON only. Never return code or markdown.';
+
 export const FALLBACK_QUIZ_QUESTIONS = [
   name => `Which fact about ${name} is true?`,
   name => `How does ${name} help its home?`,
@@ -34,4 +37,8 @@ export function fallbackWelcome({name, interests}) {
 
 export function fallbackSubject(subject) {
   return `${subject.fact} Look around and see how ${subject.name} is connected to other living things nearby.`;
+}
+
+export function buildScenePrompt(filename = 'uploaded image') {
+  return `Study this educational image (${filename}) and describe an interactive 3D interpretation of it. Preserve the main subject, important visible parts, colors, and learning labels. Use no more than 36 simple objects. Return strict JSON with this shape: {"title":"...","summary":"...","environment":{"background":"#RRGGBB","ground":"#RRGGBB"},"camera":{"position":[0,6,16],"target":[0,3,0]},"objects":[{"id":"unique-id","name":"Student-friendly name","description":"One short educational sentence","shape":"box|sphere|cone|half-cone|cylinder|torus|plane","position":[0,0,0],"scale":[1,1,1],"rotation":[0,0,0],"color":"#RRGGBB","opacity":1,"animation":"none|spin|float|pulse|flow"}],"labels":[{"text":"Short label","objectId":"matching-object-id","position":[0,0,0]}]}. Coordinates must stay between -15 and 15. Scale values must stay between 0.1 and 15. Build a recognizable scene from multiple primitives. Use half-cone for a volcano or other cone-shaped cutaway so its internal parts remain visible. Labels should name only the most important parts. Do not include comments, markdown, or any keys outside this schema.`;
 }

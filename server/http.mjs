@@ -1,11 +1,17 @@
-export function readJson(req) {
+export function readJson(req, maxBytes = 16_000) {
   return new Promise((resolve, reject) => {
     let body = '';
+    let tooLarge = false;
     req.on('data', chunk => {
+      if (tooLarge) return;
       body += chunk;
-      if (body.length > 16_000) reject(new Error('Request too large'));
+      if (body.length > maxBytes) {
+        tooLarge = true;
+        reject(new Error('Request too large'));
+      }
     });
     req.on('end', () => {
+      if (tooLarge) return;
       try {
         resolve(JSON.parse(body || '{}'));
       } catch {
