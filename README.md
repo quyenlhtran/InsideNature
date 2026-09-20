@@ -12,8 +12,8 @@ npm run dev
 
 Open `http://localhost:3018`.
 
-Copy `.env.example` to `.env` and add `NVIDIA_API_KEY` (and `ELEVEN_LABS_API_KEY`
-if you want spoken guide audio). The real `.env` file is ignored by Git.
+Copy `.env.example` to `.env` and add `NVIDIA_API_KEY`, `GEMINI_API_KEY`, or both
+(and `ELEVEN_LABS_API_KEY` if you want spoken guide audio). The real `.env` file is ignored by Git.
 Non-secret settings such as the server port, model name, and ElevenLabs voice
 id live in `app.config.mjs`.
 
@@ -29,13 +29,15 @@ In a generated scene, click an object or aim at it and press `E` to read its des
 
 ## Image-to-scene creator
 
-The creator resizes the uploaded image in the browser and sends it to the server-only `/api/scene` route. NVIDIA Nemotron is a required working stage in the creator pipeline: it inspects the pixels, classifies the picture, and chooses `cutaway`, `landscape`, or `labeled-model` as the render strategy. That decision and Nemotron's complete visual plan are passed to the NVIDIA-hosted text model, which compiles them into a declarative `SceneSpec`. The server validates every object before the browser sees it. The generic Three.js renderer supports a safe set of reusable shapes, labels, colors, and animations; it never executes model-generated code.
+The creator resizes the uploaded image in the browser and sends it to the server-only `/api/scene` route. Students explicitly choose **Try NVIDIA Nemotron** or **Try Gemini Pro**. Nemotron inspects the pixels, chooses `cutaway`, `landscape`, or `labeled-model`, and sends its visual plan to the NVIDIA-hosted structured scene compiler. Gemini is an independent direct image-to-structured-scene option. Both produce the same declarative `SceneSpec`, which the server validates before the browser sees it. The generic Three.js renderer supports a safe set of reusable shapes, labels, colors, and animations; it never executes model-generated code.
 
-The visual planner is the current multimodal `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`, configured as `NVIDIA_NEMOTRON_MODEL` in `app.config.mjs`. The app does not set output-token caps or request timeouts for NVIDIA calls; the selected hosted models and NVIDIA service can still enforce their own context and infrastructure limits. Without an API key, the creator provides a starter scene, including a volcano fallback when the filename mentions a volcano, eruption, magma, or lava.
+The visual planner is the current multimodal `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`; the alternative is `gemini-3.1-pro-preview`. Both are configured in `app.config.mjs`. The app does not set output-token caps or request timeouts; each provider can still enforce its own service limits. A model button is unavailable at the API level when its server-side key is missing.
 
 A generated scene is an educational interpretation of the visible image, not an exact reconstruction of hidden 3D geometry.
 
-Layered diagrams use dedicated procedural geometry instead of unrelated boxes. Nemotron records the visible horizons and their order, the compiler emits one `stratum` object per layer, and the renderer builds irregular solid surfaces with real depth. Soil and rock cutaways can also contain `root` and `rock` objects. Students can click every part for its explanation or use **Separate layers** to pull a profile apart and inspect the horizons individually. If scene compilation fails after Nemotron has analyzed an image, the server uses that analysis to return a safe layered fallback instead of exposing broken model JSON to the browser.
+Layered diagrams use dedicated procedural geometry instead of unrelated boxes. The chosen model records the visible horizons and their order and emits one `stratum` object per layer, while the renderer builds irregular solid surfaces with real depth. Soil and rock cutaways can also contain `root` and `rock` objects. Students can click every part for its explanation or use **Separate layers** to pull a profile apart and inspect the horizons individually.
+
+Both paths request schema-constrained JSON rather than relying on prompt-only formatting. The server parses and validates the SceneSpec and checks important visual rules such as requiring real strata for a detected soil profile. Each button makes exactly one conversion attempt: there is no automatic repair, retry, provider switch, or fallback scene. On failure, the original preview remains selected and the student sees a short model-level error so they can manually try the other button; raw JSON parser messages are never shown.
 
 ## NVIDIA guide
 

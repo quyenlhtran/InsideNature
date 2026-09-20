@@ -4,7 +4,9 @@ import {
   SCENE_SYSTEM_PROMPT,
   buildSceneAnalysisPrompt,
   buildSceneFromAnalysisPrompt,
+  buildGeminiScenePrompt,
 } from './prompts.mjs';
+import {GEMINI_SCENE_JSON_SCHEMA, SCENE_JSON_SCHEMA} from './scene-schema.mjs';
 
 const SHAPES = new Set(['box', 'sphere', 'cone', 'half-cone', 'cylinder', 'torus', 'plane', 'stratum', 'root', 'rock']);
 const PRESENTATIONS = new Set(['cutaway', 'landscape', 'model']);
@@ -21,10 +23,87 @@ const text = (value, max, fallback = '') => String(value || fallback).trim().sli
 const color = (value, fallback) => colorPattern.test(String(value)) ? String(value) : fallback;
 
 function parseJson(content) {
-  const start = content.indexOf('{');
-  const end = content.lastIndexOf('}');
-  if (start < 0 || end <= start) throw new Error('Scene compiler returned invalid JSON');
-  return JSON.parse(content.slice(start, end + 1));
+  try {
+    return JSON.parse(content);
+  } catch {
+    const start = content.indexOf('{');
+    const end = content.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      try { return JSON.parse(content.slice(start, end + 1)); } catch {/* Report one clean conversion failure below. */}
+    }
+    throw new Error('Scene compiler output was incomplete or malformed');
+  }
+}
+
+async function compileScene({apiKey, model, messages}) {
+  const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json'},
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature: 0,
+      reasoning_effort: 'low',
+      chat_template_kwargs: {enable_thinking: false},
+      response_format: {
+        type: 'json_schema',
+        json_schema: {name: 'inside_nature_scene', strict: true, schema: SCENE_JSON_SCHEMA},
+      },
+    }),
+  });
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 300);
+    throw new Error(`NVIDIA scene compiler returned ${response.status}: ${detail}`);
+  }
+  const data = await response.json();
+  const choice = data?.choices?.[0];
+  const content = choice?.message?.content;
+  if (typeof content !== 'string' || !content.trim()) throw new Error('Scene compiler returned no structured scene');
+  return {content: content.trim(), finishReason: choice?.finish_reason};
+}
+
+function geminiOutputText(data) {
+  if (typeof data?.output_text === 'string') return data.output_text;
+  const containers = [data?.steps, data?.outputs, data?.output].filter(Array.isArray);
+  for (const container of containers) {
+    for (const item of container) {
+      if (typeof item?.text === 'string') return item.text;
+      if (!Array.isArray(item?.content)) continue;
+      const part = item.content.find(value => typeof value?.text === 'string');
+      if (part) return part.text;
+    }
+  }
+  throw new Error('Gemini returned no structured scene');
+}
+
+async function generateWithGemini({apiKey, model, image, filename}) {
+  const match = image.match(/^data:(image\/(?:png|jpeg));base64,(.+)$/i);
+  if (!match) throw new Error('Unsupported image data');
+  const response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+    method: 'POST',
+    headers: {'x-goog-api-key': apiKey, 'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      model,
+      input: [
+        {type: 'text', text: buildGeminiScenePrompt(filename)},
+        {type: 'image', data: match[2], mime_type: match[1].toLowerCase()},
+      ],
+      response_format: {type: 'text', mime_type: 'application/json', schema: GEMINI_SCENE_JSON_SCHEMA},
+    }),
+  });
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 300);
+    throw new Error(`Gemini returned ${response.status}: ${detail}`);
+  }
+  const scene = validateScene(parseJson(geminiOutputText(await response.json())));
+  validateSceneSemantics(scene, `${filename} ${scene.title} ${scene.summary}`);
+  const renderStrategy = scene.presentation === 'model' ? 'labeled-model' : scene.presentation;
+  return {
+    source: 'gemini',
+    model,
+    pipeline: {planner: model, compiler: model, renderStrategy, compilation: 'first-pass'},
+    scene,
+  };
 }
 
 function chooseRenderStrategy(analysis) {
@@ -79,6 +158,14 @@ function validateScene(input, defaultPresentation = 'landscape') {
     objects,
     labels,
   };
+}
+
+function validateSceneSemantics(scene, analysis) {
+  const isSoilProfile = /soil|horizon|topsoil|subsoil|bedrock|parent material/i.test(analysis);
+  if (isSoilProfile && scene.objects.filter(object => object.shape === 'stratum').length < 2) {
+    throw new Error('Detected a layered soil profile, but the scene did not use separate stratum objects for its horizons');
+  }
+  return scene;
 }
 
 function fallbackScene(filename, analysis = '') {
@@ -144,79 +231,84 @@ function fallbackScene(filename, analysis = '') {
   });
 }
 
-export function createSceneHandler({apiKey, nemotronModel, textModel}) {
+export function createSceneHandler({apiKey, nemotronModel, textModel, geminiApiKey, geminiModel}) {
   return async function handleScene(req, res) {
-    let filename = 'uploaded image';
-    let analysis = '';
     try {
       const body = await readJson(req, 6_500_000);
       const image = String(body.image || '');
-      filename = text(body.filename, 120, 'uploaded image');
+      const filename = text(body.filename, 120, 'uploaded image');
+      const provider = body.provider === 'gemini' ? 'gemini' : 'nvidia';
       if (!/^data:image\/(png|jpeg);base64,/i.test(image)) {
         return sendJson(res, 400, {error: 'Upload a PNG or JPEG image'});
       }
-      if (!apiKey) return sendJson(res, 200, {source: 'fallback', scene: fallbackScene(filename)});
 
-      const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json'},
-        body: JSON.stringify({
-          model: nemotronModel,
-          messages: [
-            {role: 'system', content: NEMOTRON_VISUAL_PLANNER_SYSTEM_PROMPT},
-            {role: 'user', content: [
-              {type: 'text', text: buildSceneAnalysisPrompt(filename)},
-              {type: 'image_url', image_url: {url: image}},
-            ]},
-          ],
-          temperature: 0.2,
-        }),
-      });
-      if (!response.ok) {
-        const detail = (await response.text()).slice(0, 300);
-        throw new Error(`NVIDIA Nemotron API returned ${response.status}: ${detail}`);
+      if (provider === 'gemini') {
+        if (!geminiApiKey) return sendJson(res, 503, {
+          provider,
+          error: 'Gemini is not connected yet. Add GEMINI_API_KEY, or try NVIDIA Nemotron.',
+        });
+        try {
+          return sendJson(res, 200, await generateWithGemini({apiKey: geminiApiKey, model: geminiModel, image, filename}));
+        } catch {
+          return sendJson(res, 502, {
+            provider,
+            error: 'Gemini could not turn this picture into a valid interactive scene. Your picture is still selected, so you can try NVIDIA Nemotron.',
+          });
+        }
       }
-      const data = await response.json();
-      const content = data?.choices?.[0]?.message?.content;
-      if (typeof content !== 'string' || !content.trim()) throw new Error('Nemotron returned no visual plan');
-      analysis = content;
 
-      const renderStrategy = chooseRenderStrategy(content);
-      const conversion = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json'},
-        body: JSON.stringify({
+      if (!apiKey) return sendJson(res, 503, {
+        provider,
+        error: 'NVIDIA Nemotron is not connected yet. Add NVIDIA_API_KEY, or try Gemini.',
+      });
+
+      try {
+        const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json'},
+          body: JSON.stringify({
+            model: nemotronModel,
+            messages: [
+              {role: 'system', content: NEMOTRON_VISUAL_PLANNER_SYSTEM_PROMPT},
+              {role: 'user', content: [
+                {type: 'text', text: buildSceneAnalysisPrompt(filename)},
+                {type: 'image_url', image_url: {url: image}},
+              ]},
+            ],
+            temperature: 0.2,
+          }),
+        });
+        if (!response.ok) throw new Error(`Nemotron returned ${response.status}`);
+        const data = await response.json();
+        const analysis = data?.choices?.[0]?.message?.content;
+        if (typeof analysis !== 'string' || !analysis.trim()) throw new Error('Nemotron returned no visual plan');
+
+        const renderStrategy = chooseRenderStrategy(analysis);
+        const defaultPresentation = renderStrategy === 'cutaway' ? 'cutaway' : renderStrategy === 'landscape' ? 'landscape' : 'model';
+        const compiled = await compileScene({
+          apiKey,
           model: textModel,
           messages: [
             {role: 'system', content: SCENE_SYSTEM_PROMPT},
-            {role: 'user', content: buildSceneFromAnalysisPrompt(filename, content, renderStrategy)},
+            {role: 'user', content: buildSceneFromAnalysisPrompt(filename, analysis, renderStrategy)},
           ],
-          temperature: 0.1,
-          reasoning_effort: 'low',
-          response_format: {type: 'json_object'},
-        }),
-      });
-      if (!conversion.ok) {
-        const detail = (await conversion.text()).slice(0, 300);
-        throw new Error(`NVIDIA scene compiler returned ${conversion.status}: ${detail}`);
+        });
+        if (compiled.finishReason === 'length') throw new Error('Scene compiler stopped early');
+        const scene = validateSceneSemantics(validateScene(parseJson(compiled.content), defaultPresentation), analysis);
+        return sendJson(res, 200, {
+          source: 'nvidia',
+          model: nemotronModel,
+          pipeline: {planner: nemotronModel, compiler: textModel, renderStrategy, compilation: 'first-pass'},
+          scene,
+        });
+      } catch {
+        return sendJson(res, 502, {
+          provider,
+          error: 'NVIDIA Nemotron could not turn this picture into a valid interactive scene. Your picture is still selected, so you can try Gemini.',
+        });
       }
-      const conversionData = await conversion.json();
-      const converted = conversionData?.choices?.[0]?.message?.content;
-      if (typeof converted !== 'string' || !converted.trim()) throw new Error('Scene compiler returned no JSON');
-      const scene = validateScene(parseJson(converted), renderStrategy === 'cutaway' ? 'cutaway' : renderStrategy === 'landscape' ? 'landscape' : 'model');
-      sendJson(res, 200, {
-        source: 'nvidia',
-        model: nemotronModel,
-        pipeline: {planner: nemotronModel, compiler: textModel, renderStrategy},
-        scene,
-      });
-    } catch (error) {
-      if (analysis) return sendJson(res, 200, {
-        source: 'fallback',
-        warning: error instanceof Error ? error.message : 'Scene compilation failed',
-        scene: fallbackScene(filename, analysis),
-      });
-      sendJson(res, 502, {error: error instanceof Error ? error.message : 'Scene generation failed'});
+    } catch {
+      sendJson(res, 400, {error: 'We could not read that request. Choose the image again and retry.'});
     }
   };
 }
