@@ -106,7 +106,7 @@ Open **http://localhost:3018**.
 
 ### Deploy to Vercel
 
-In Vercel, import the repository and set the project **Root Directory** to `InsideNature`.
+In Vercel, import the `quyenlhtran/InsideNature` repository and leave the project **Root Directory** at the repository root (`.`).
 The included `vercel.json` runs `npm run build`, serves the Vite output from `dist`, and exposes the existing AI routes as Vercel serverless functions.
 
 Add these environment variables in the Vercel project settings. Use the same names for Production, Preview, and Development as needed:

@@ -32,6 +32,21 @@ const handleSpeech = createSpeechHandler({
 export default async function handler(req, res) {
   const pathname = new URL(req.url || '/', 'http://vercel.local').pathname;
 
+  if (req.method === 'GET' && pathname === '/api/health') {
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({
+      ok: true,
+      providers: {
+        nvidia: Boolean(process.env.NVIDIA_API_KEY),
+        gemini: Boolean(process.env.GEMINI_API_KEY),
+        openrouter: Boolean(process.env.OPENROUTER_API_KEY),
+        elevenlabs: Boolean(process.env.ELEVEN_LABS_API_KEY || process.env.ELEVENLABS_API_KEY),
+      },
+    }));
+    return;
+  }
+
   if (req.method === 'POST' && pathname === '/api/personalize') {
     await handleGuide(req, res);
     return;
