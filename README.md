@@ -26,6 +26,6 @@ name live in `app.config.mjs`.
 
 ## NVIDIA guide
 
-The server calls NVIDIA's OpenAI-compatible `POST /v1/chat/completions` endpoint using `nvidia/nemotron-3.5-lightning-30b-a3b`. The API key never enters the browser bundle. If the key is missing or the service is unavailable, the experience uses its built-in field-guide copy instead.
+The server calls NVIDIA's OpenAI-compatible `POST /v1/chat/completions` endpoint. The default is the fast `openai/gpt-oss-20b` model hosted by NVIDIA NIM; switch `NVIDIA_MODEL` in `app.config.mjs` to another model available to your NVIDIA account. The API key never enters the browser bundle. If the key is missing or the service is unavailable, the experience uses its built-in field-guide copy instead.
 
 All geometry and animation are generated in the browser with Three.js; no external 3D model files are required.
