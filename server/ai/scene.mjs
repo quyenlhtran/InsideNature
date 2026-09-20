@@ -376,6 +376,8 @@ export function createSceneHandler({apiKey, visionModel, textModel, geminiApiKey
               ]},
             ],
             temperature: 0.2,
+            top_k: 1,
+            chat_template_kwargs: {enable_thinking: false},
           }),
         });
         if (!response.ok) {
