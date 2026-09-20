@@ -83,7 +83,6 @@ export function createGuideHandler({apiKey, model}) {
             {role: 'user', content: prompt},
           ],
           temperature: quiz ? 0.75 : 0.55,
-          max_tokens: quiz ? 260 : 180,
           stream: wantsStream,
           reasoning_effort: 'low',
         }),

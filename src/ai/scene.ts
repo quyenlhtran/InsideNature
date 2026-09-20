@@ -27,6 +27,11 @@ export type SceneSpec = {
 export type GeneratedScene = {
   source: 'nvidia' | 'fallback';
   model?: string;
+  pipeline?: {
+    planner: string;
+    compiler: string;
+    renderStrategy: 'cutaway' | 'landscape' | 'labeled-model';
+  };
   scene: SceneSpec;
 };
 

@@ -1,5 +1,10 @@
 import {readJson, sendJson} from '../http.mjs';
-import {SCENE_SYSTEM_PROMPT, buildSceneFromAnalysisPrompt, buildScenePrompt} from './prompts.mjs';
+import {
+  NEMOTRON_VISUAL_PLANNER_SYSTEM_PROMPT,
+  SCENE_SYSTEM_PROMPT,
+  buildSceneAnalysisPrompt,
+  buildSceneFromAnalysisPrompt,
+} from './prompts.mjs';
 
 const SHAPES = new Set(['box', 'sphere', 'cone', 'half-cone', 'cylinder', 'torus', 'plane']);
 const ANIMATIONS = new Set(['none', 'spin', 'float', 'pulse', 'flow']);
@@ -19,6 +24,14 @@ function parseJson(content) {
   const end = content.lastIndexOf('}');
   if (start < 0 || end <= start) throw new Error('Vision model returned invalid scene JSON');
   return JSON.parse(content.slice(start, end + 1));
+}
+
+function chooseRenderStrategy(analysis) {
+  const declared = String(analysis).match(/RENDER_STRATEGY\s*:\s*(cutaway|landscape|labeled-model)/i)?.[1]?.toLowerCase();
+  if (declared) return declared;
+  if (/cross[- ]?section|cutaway|internal|inside|layer|chamber|vent/i.test(analysis)) return 'cutaway';
+  if (/ecosystem|habitat|landscape|forest|ocean|river|pond|mountain|environment/i.test(analysis)) return 'landscape';
+  return 'labeled-model';
 }
 
 function validateScene(input) {
@@ -100,7 +113,7 @@ function fallbackScene(filename) {
   });
 }
 
-export function createSceneHandler({apiKey, visionModel, textModel}) {
+export function createSceneHandler({apiKey, nemotronModel, textModel}) {
   return async function handleScene(req, res) {
     try {
       const body = await readJson(req, 6_500_000);
@@ -115,56 +128,54 @@ export function createSceneHandler({apiKey, visionModel, textModel}) {
         method: 'POST',
         headers: {Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json'},
         body: JSON.stringify({
-          model: visionModel,
+          model: nemotronModel,
           messages: [
-            {role: 'system', content: SCENE_SYSTEM_PROMPT},
+            {role: 'system', content: NEMOTRON_VISUAL_PLANNER_SYSTEM_PROMPT},
             {role: 'user', content: [
-              {type: 'text', text: buildScenePrompt(filename)},
+              {type: 'text', text: buildSceneAnalysisPrompt(filename)},
               {type: 'image_url', image_url: {url: image}},
             ]},
           ],
           temperature: 0.2,
-          max_tokens: 2400,
-          response_format: {type: 'json_object'},
         }),
       });
       if (!response.ok) {
         const detail = (await response.text()).slice(0, 300);
-        throw new Error(`NVIDIA vision API returned ${response.status}: ${detail}`);
+        throw new Error(`NVIDIA Nemotron API returned ${response.status}: ${detail}`);
       }
       const data = await response.json();
       const content = data?.choices?.[0]?.message?.content;
-      if (typeof content !== 'string' || !content.trim()) throw new Error('Vision model returned no scene');
+      if (typeof content !== 'string' || !content.trim()) throw new Error('Nemotron returned no visual plan');
 
-      let scene;
-      try {
-        scene = validateScene(parseJson(content));
-      } catch {
-        const conversion = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json'},
-          body: JSON.stringify({
-            model: textModel,
-            messages: [
-              {role: 'system', content: SCENE_SYSTEM_PROMPT},
-              {role: 'user', content: buildSceneFromAnalysisPrompt(filename, content)},
-            ],
-            temperature: 0.1,
-            max_tokens: 3000,
-            reasoning_effort: 'low',
-            response_format: {type: 'json_object'},
-          }),
-        });
-        if (!conversion.ok) {
-          const detail = (await conversion.text()).slice(0, 300);
-          throw new Error(`NVIDIA scene conversion returned ${conversion.status}: ${detail}`);
-        }
-        const conversionData = await conversion.json();
-        const converted = conversionData?.choices?.[0]?.message?.content;
-        if (typeof converted !== 'string' || !converted.trim()) throw new Error('Scene converter returned no JSON');
-        scene = validateScene(parseJson(converted));
+      const renderStrategy = chooseRenderStrategy(content);
+      const conversion = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json'},
+        body: JSON.stringify({
+          model: textModel,
+          messages: [
+            {role: 'system', content: SCENE_SYSTEM_PROMPT},
+            {role: 'user', content: buildSceneFromAnalysisPrompt(filename, content, renderStrategy)},
+          ],
+          temperature: 0.1,
+          reasoning_effort: 'low',
+          response_format: {type: 'json_object'},
+        }),
+      });
+      if (!conversion.ok) {
+        const detail = (await conversion.text()).slice(0, 300);
+        throw new Error(`NVIDIA scene compiler returned ${conversion.status}: ${detail}`);
       }
-      sendJson(res, 200, {source: 'nvidia', model: visionModel, scene});
+      const conversionData = await conversion.json();
+      const converted = conversionData?.choices?.[0]?.message?.content;
+      if (typeof converted !== 'string' || !converted.trim()) throw new Error('Scene compiler returned no JSON');
+      const scene = validateScene(parseJson(converted));
+      sendJson(res, 200, {
+        source: 'nvidia',
+        model: nemotronModel,
+        pipeline: {planner: nemotronModel, compiler: textModel, renderStrategy},
+        scene,
+      });
     } catch (error) {
       sendJson(res, 502, {error: error instanceof Error ? error.message : 'Scene generation failed'});
     }
