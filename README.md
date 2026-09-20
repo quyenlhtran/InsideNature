@@ -11,7 +11,7 @@
 | Name | Link |
 |---|---|
 | Quyen Tran | [@quyenlhtran](https://github.com/quyenlhtran) |
-| Quynh Tran | [@quyenlhtran](https://github.com/quyenlhtran>) |
+| Quynh Tran | [@quynhtran158](https://github.com/quynhtran158>) |
 | Quan Tran | [@quantr10](https://github.com/quantr10) |
 | Truong Nguyen Tien Khanh | [@heyamktr](https://github.com/heyamktr) |
 
