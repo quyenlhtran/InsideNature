@@ -10,7 +10,7 @@ export const QUIZ_SYSTEM_PROMPT =
   'You are Inside Nature, a fun and accurate guide for school-age students. Keep all language easy to understand. Return valid JSON only.';
 
 export const SCENE_SYSTEM_PROMPT =
-  'You turn educational images into safe, interactive 3D scene descriptions for students. Return strict JSON only. Never return code or markdown.';
+  'You compile a visual plan into a safe interactive 3D scene for students. Return only the complete JSON object required by the supplied schema. Do not include markdown, commentary, or visible reasoning. Prefer fewer meaningful objects over repetitive decoration. Finish every object and array.';
 
 export const NEMOTRON_VISUAL_PLANNER_SYSTEM_PROMPT =
   'You are the visual planning stage of an image-to-interactive-3D pipeline, not a conversational assistant. Inspect, classify, and plan the uploaded educational image so another model can compile your plan into a scene. Be accurate, concrete, and student-friendly.';
@@ -43,13 +43,17 @@ export function fallbackSubject(subject) {
 }
 
 export function buildScenePrompt(filename = 'uploaded image') {
-  return `Study this educational image (${filename}) and describe an interactive 3D interpretation of it. Preserve the main subject, important visible parts, colors, and learning labels. Use no more than 36 simple objects. Return strict JSON with this shape: {"title":"...","summary":"...","environment":{"background":"#RRGGBB","ground":"#RRGGBB"},"camera":{"position":[0,6,16],"target":[0,3,0]},"objects":[{"id":"unique-id","name":"Student-friendly name","description":"One short educational sentence","shape":"box|sphere|cone|half-cone|cylinder|torus|plane","position":[0,0,0],"scale":[1,1,1],"rotation":[0,0,0],"color":"#RRGGBB","opacity":1,"animation":"none|spin|float|pulse|flow"}],"labels":[{"text":"Short label","objectId":"matching-object-id","position":[0,0,0]}]}. Coordinates must stay between -15 and 15. Scale values must stay between 0.1 and 15. Build a recognizable scene from multiple primitives. Use half-cone for a volcano or other cone-shaped cutaway so its internal parts remain visible. Labels should name only the most important parts. Do not include comments, markdown, or any keys outside this schema.`;
+  return `Compile the visual plan for ${filename} into the supplied SceneSpec schema. Preserve the important parts, spatial order, relative size, colors, and learning labels. Coordinates stay between -15 and 15; scale values stay between 0.1 and 15. Every important part is a separate clickable object with one short student-friendly description. For stacked cross-sections, use presentation cutaway and one stratum per visible layer, sharing width and depth and following the true top-to-bottom order. Use root and rock for soil details. For volcanoes, use a small number of half-cone rock layers plus separate vent, crater, magma chamber, and lava objects. Keep internal structures visible from the starting camera. Return only one complete schema-matching JSON object.`;
 }
 
 export function buildSceneAnalysisPrompt(filename = 'uploaded image') {
-  return `Inspect the uploaded educational image (${filename}) and plan how it should become an interactive 3D learning scene. Start with exactly one of these routing decisions: RENDER_STRATEGY: cutaway, RENDER_STRATEGY: landscape, or RENDER_STRATEGY: labeled-model. Use cutaway for cross-sections and diagrams with important inner parts, landscape for environments and ecosystems, and labeled-model for a single subject viewed from outside. Then identify the subject, image type, important visible parts, colors, spatial relationships, labels, useful motion, and one learning goal. Your analysis will control the next stage of the application, so do not chat with the user and do not omit the routing decision.`;
+  return `Inspect the uploaded educational image (${filename}) and plan how it should become an interactive 3D learning scene. Start with exactly one of these routing decisions: RENDER_STRATEGY: cutaway, RENDER_STRATEGY: landscape, or RENDER_STRATEGY: labeled-model. Use cutaway for cross-sections and diagrams with important inner parts, landscape for environments and ecosystems, and labeled-model for one subject viewed from outside. Explicitly identify every visible layer or horizon in top-to-bottom or outside-to-inside order. For each layer, record its label, color, relative thickness, what it contains, and a short student-friendly learning fact. Also identify roots, rocks, vents, chambers, flows, and other structures that cross or sit inside layers. Your analysis controls procedural geometry and object interactions in the next stage, so preserve spatial relationships, do not chat with the user, and do not omit the routing decision.`;
 }
 
 export function buildSceneFromAnalysisPrompt(filename, analysis, renderStrategy) {
   return `${buildScenePrompt(filename)}\n\nNVIDIA Nemotron inspected the image and selected the ${renderStrategy} rendering strategy. Follow that strategy closely. Its complete visual plan is below:\n\n${String(analysis)}\n\nCompile the plan into the required JSON now. Use a different, meaningful id for every object, and make every label objectId match one of those ids. Preserve the important spatial relationships identified by Nemotron.`;
+}
+
+export function buildGeminiScenePrompt(filename = 'uploaded image') {
+  return `Inspect ${filename} and convert it directly into the supplied interactive SceneSpec. ${buildScenePrompt(filename)} Use the image itself as the source of truth. Do not describe your work and do not add parts that are not supported by the image.`;
 }
