@@ -1,7 +1,7 @@
 export type SceneShape = 'box' | 'sphere' | 'cone' | 'half-cone' | 'cylinder' | 'torus' | 'plane' | 'stratum' | 'root' | 'rock';
 export type SceneAnimation = 'none' | 'spin' | 'float' | 'pulse' | 'flow';
 export type Vector3Tuple = [number, number, number];
-export type SceneProvider = 'nvidia' | 'gemini';
+export type SceneProvider = 'nvidia' | 'gemini' | 'openrouter';
 
 export type SceneObjectSpec = {
   id: string;
