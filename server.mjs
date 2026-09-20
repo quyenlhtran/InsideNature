@@ -64,9 +64,9 @@ createHttpServer(async (req, res) => {
             { role: 'user', content: prompt },
           ],
           temperature: 0.55,
-          max_tokens: 140,
+          max_tokens: 180,
           stream: false,
-          chat_template_kwargs: { enable_thinking: false },
+          reasoning_effort: 'low',
         }),
       });
       if (!response.ok) {
