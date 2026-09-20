@@ -12,6 +12,10 @@ npm run dev
 
 Open `http://localhost:3018`.
 
+Development mode watches server-side files as well as browser files. Changes to
+AI handlers and prompts restart Node automatically, preventing a new frontend
+from continuing to call an older in-memory `/api/scene` handler.
+
 Copy `.env.example` to `.env` and add `NVIDIA_API_KEY`, `GEMINI_API_KEY`, or both
 (and `ELEVEN_LABS_API_KEY` if you want spoken guide audio). The real `.env` file is ignored by Git.
 Non-secret settings such as the server port, model name, and ElevenLabs voice

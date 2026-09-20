@@ -13,6 +13,41 @@ const PRESENTATIONS = new Set(['cutaway', 'landscape', 'model']);
 const ANIMATIONS = new Set(['none', 'spin', 'float', 'pulse', 'flow']);
 const colorPattern = /^#[0-9a-f]{6}$/i;
 
+class ProviderRequestError extends Error {
+  constructor(provider, status, detail) {
+    super(`${provider} returned ${status}: ${detail}`);
+    this.provider = provider;
+    this.status = status;
+  }
+}
+
+function sceneFailure(provider, error) {
+  const label = provider === 'gemini' ? 'Gemini' : 'NVIDIA Nemotron';
+  const alternative = provider === 'gemini' ? 'NVIDIA Nemotron' : 'Gemini';
+  if (error instanceof ProviderRequestError) {
+    if (error.status === 429) return {
+      status: 429,
+      code: 'PROVIDER_RATE_LIMIT',
+      error: `${label} has reached its API usage limit. Your picture is still selected, so you can wait or try ${alternative}.`,
+    };
+    if (error.status === 401 || error.status === 403) return {
+      status: 502,
+      code: 'PROVIDER_AUTH_ERROR',
+      error: `${label} is not connected correctly. Check its server API key, or try ${alternative}.`,
+    };
+    return {
+      status: 502,
+      code: 'PROVIDER_UNAVAILABLE',
+      error: `${label} is temporarily unavailable. Your picture is still selected, so you can try ${alternative}.`,
+    };
+  }
+  return {
+    status: 502,
+    code: 'MODEL_OUTPUT_INVALID',
+    error: `${label} could not turn this picture into a valid interactive scene. Your picture is still selected, so you can try ${alternative}.`,
+  };
+}
+
 const numberIn = (value, min, max, fallback) => {
   const number = Number(value);
   return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
@@ -53,7 +88,7 @@ async function compileScene({apiKey, model, messages}) {
   });
   if (!response.ok) {
     const detail = (await response.text()).slice(0, 300);
-    throw new Error(`NVIDIA scene compiler returned ${response.status}: ${detail}`);
+    throw new ProviderRequestError('NVIDIA scene compiler', response.status, detail);
   }
   const data = await response.json();
   const choice = data?.choices?.[0];
@@ -93,7 +128,7 @@ async function generateWithGemini({apiKey, model, image, filename}) {
   });
   if (!response.ok) {
     const detail = (await response.text()).slice(0, 300);
-    throw new Error(`Gemini returned ${response.status}: ${detail}`);
+    throw new ProviderRequestError('Gemini', response.status, detail);
   }
   const scene = validateScene(parseJson(geminiOutputText(await response.json())));
   validateSceneSemantics(scene, `${filename} ${scene.title} ${scene.summary}`);
@@ -249,11 +284,10 @@ export function createSceneHandler({apiKey, nemotronModel, textModel, geminiApiK
         });
         try {
           return sendJson(res, 200, await generateWithGemini({apiKey: geminiApiKey, model: geminiModel, image, filename}));
-        } catch {
-          return sendJson(res, 502, {
-            provider,
-            error: 'Gemini could not turn this picture into a valid interactive scene. Your picture is still selected, so you can try NVIDIA Nemotron.',
-          });
+        } catch (error) {
+          console.error('[scene:gemini] conversion failed:', error instanceof Error ? error.message : error);
+          const failure = sceneFailure(provider, error);
+          return sendJson(res, failure.status, {provider, code: failure.code, error: failure.error});
         }
       }
 
@@ -278,7 +312,10 @@ export function createSceneHandler({apiKey, nemotronModel, textModel, geminiApiK
             temperature: 0.2,
           }),
         });
-        if (!response.ok) throw new Error(`Nemotron returned ${response.status}`);
+        if (!response.ok) {
+          const detail = (await response.text()).slice(0, 300);
+          throw new ProviderRequestError('NVIDIA Nemotron', response.status, detail);
+        }
         const data = await response.json();
         const analysis = data?.choices?.[0]?.message?.content;
         if (typeof analysis !== 'string' || !analysis.trim()) throw new Error('Nemotron returned no visual plan');
@@ -301,11 +338,10 @@ export function createSceneHandler({apiKey, nemotronModel, textModel, geminiApiK
           pipeline: {planner: nemotronModel, compiler: textModel, renderStrategy, compilation: 'first-pass'},
           scene,
         });
-      } catch {
-        return sendJson(res, 502, {
-          provider,
-          error: 'NVIDIA Nemotron could not turn this picture into a valid interactive scene. Your picture is still selected, so you can try Gemini.',
-        });
+      } catch (error) {
+        console.error('[scene:nvidia] conversion failed:', error instanceof Error ? error.message : error);
+        const failure = sceneFailure(provider, error);
+        return sendJson(res, failure.status, {provider, code: failure.code, error: failure.error});
       }
     } catch {
       sendJson(res, 400, {error: 'We could not read that request. Choose the image again and retry.'});
