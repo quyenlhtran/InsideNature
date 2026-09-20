@@ -13,8 +13,9 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML=`
   <header class="brand"><div class="brand-mark">N</div><div><strong>Inside Nature</strong><small>Living field atlas · 01</small></div></header>
   <div class="top-status"><span class="ai-status" id="ai-status">Personal guide ready</span><span class="live">Ecosystem live</span><button class="sound" id="sound" aria-label="Toggle ambient sound">♪</button></div>
   <aside class="biome-card"><div class="eyebrow" id="zone-code">Biome 02 · Temperate</div><h2 id="zone-name">Woodland</h2><p id="zone-copy">Follow the river, listen closely, and meet the lives that keep this forest in balance.</p><div class="progress-label"><span>Field journal</span><span id="progress-count">0 / 0</span></div><div class="progress-track"><i id="progress-bar"></i></div><div class="discoveries" id="discoveries"></div></aside>
-  <nav class="depth-nav" aria-label="Travel between biomes"><button data-biome="sky">⌁<span>Canopy & sky</span></button><i></i><button data-biome="woodland" class="active">♧<span>Forest floor</span></button><i></i><button data-biome="underwater">≋<span>Below the surface</span></button></nav>
+  <nav class="depth-nav" aria-label="Travel between biomes"><button data-biome="sky" aria-keyshortcuts="1"><b class="key">1</b><span class="nav-icon" aria-hidden="true">⌁</span><span class="nav-tip">Canopy & sky</span></button><button data-biome="woodland" class="active" aria-keyshortcuts="2"><b class="key">2</b><span class="nav-icon" aria-hidden="true">♧</span><span class="nav-tip">Forest floor</span></button><button data-biome="underwater" aria-keyshortcuts="3"><b class="key">3</b><span class="nav-icon" aria-hidden="true">≋</span><span class="nav-tip">Below the surface</span></button></nav>
   <div class="crosshair"></div><div class="interact-hint" id="hint"><b>E</b><span></span></div>
+  <div class="look-hint" id="look-hint"><b>Esc</b><span>Unlock mouse</span></div>
   <div class="controls"><div class="keys"><b class="key">W</b><b class="key">A</b><b class="key">S</b><b class="key">D</b></div><span>Move</span><div class="keys"><b class="key">Space</b><b class="key">Shift</b></div><span>Rise / descend</span><div class="keys"><b class="key">Click</b><b class="key">E</b></div><span>Discover</span></div>
   <div class="altitude"><b id="altitude">+03.5 m</b><span>Relative depth</span></div>
   <section class="intro" id="intro">
@@ -249,7 +250,9 @@ const raycaster=new T.Raycaster();const pointer=new T.Vector2();const personaliz
 let visitor:VisitorProfile={name:'Explorer',interests:'wildlife and ecosystems',style:'curious'};
 const zones:Record<Biome,{name:string;code:string;copy:string;color:string;fog:string}>={underwater:{name:'River Below',code:'Biome 01 · Freshwater',copy:'Descend through the surface and follow the lives hidden beneath the current.',color:'#176d7d',fog:'#145b68'},woodland:{name:'Woodland',code:'Biome 02 · Temperate',copy:'Follow the river, listen closely, and meet the lives that keep this forest in balance.',color:'#91c7c8',fog:'#8bb8a7'},sky:{name:'Open Sky',code:'Biome 03 · Canopy',copy:'Rise above the branches to see how wind, water, and migration connect distant habitats.',color:'#88c5df',fog:'#a9d2dc'}};
 function setBiome(biome:Biome){if(currentBiome===biome)return;const from=currentBiome;currentBiome=biome;if(started){if(from==='underwater'||biome==='underwater')mixer.playSplash();if(biome==='sky')mixer.playWind()}const z=zones[biome];document.querySelector('#zone-name')!.textContent=z.name;document.querySelector('#zone-code')!.textContent=z.code;document.querySelector('#zone-copy')!.textContent=z.copy;world.classList.toggle('underwater',biome==='underwater');document.querySelectorAll<HTMLButtonElement>('[data-biome]').forEach(b=>b.classList.toggle('active',b.dataset.biome===biome));}
-function travel(biome:Biome){const destinations:Record<Biome,T.Vector3>={underwater:new T.Vector3(0,-5,12),woodland:new T.Vector3(0,3.5,15),sky:new T.Vector3(0,14,16)};camera.position.copy(destinations[biome]);pitch=biome==='sky'?-0.12:0;setBiome(biome);renderer.domElement.requestPointerLock().catch(()=>{});}
+function travel(biome:Biome,lockLook=true){const destinations:Record<Biome,T.Vector3>={underwater:new T.Vector3(0,-5,12),woodland:new T.Vector3(0,3.5,15),sky:new T.Vector3(0,14,16)};camera.position.copy(destinations[biome]);pitch=biome==='sky'?-0.12:0;setBiome(biome);if(lockLook)renderer.domElement.requestPointerLock().catch(()=>{});else if(document.pointerLockElement)document.exitPointerLock();}
+const biomeByDigit:Record<string,Biome>={Digit1:'sky',Digit2:'woodland',Digit3:'underwater',Numpad1:'sky',Numpad2:'woodland',Numpad3:'underwater'};
+function syncLookHint(){document.querySelector('#look-hint')!.classList.toggle('visible',started&&!dialogueOpen&&document.pointerLockElement===renderer.domElement);}
 
 async function getPersonalizedText(subject?:FieldObject){const response=await fetch('/api/personalize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...visitor,subject:subject?{name:subject.name,fact:subject.fact,kind:subject.kind,biome:subject.biome}:undefined})});if(!response.ok)throw new Error('Guide unavailable');return response.json() as Promise<{text:string;source:'nvidia'|'fallback';model?:string}>}
 async function streamPersonalizedText(subject:FieldObject,onText:(text:string)=>void){
@@ -291,6 +294,7 @@ async function openDialogue(index:number){
  const speakAfterSfx=(text:string)=>{void sfxDone.then(()=>{if(mixer.isEncounter(encounter))void mixer.speak(text).catch(()=>{});});};
  if(document.pointerLockElement)document.exitPointerLock();
  document.querySelector('#dialogue')!.classList.add('open');
+ syncLookHint();
  document.querySelector('#dialogue-tag')!.textContent=`${c.kind==='plant'?'Flora':'Wildlife'} encounter · ${zones[c.biome].name}`;
  document.querySelector('#dialogue-name')!.textContent=c.name;
  const fact=document.querySelector('#dialogue-fact')!,badge=document.querySelector('#nim-badge')!,choices=document.querySelector('#choices')!,result=document.querySelector('#result')!;
@@ -318,7 +322,7 @@ async function openDialogue(index:number){
 }
 function focusCreature(index:number){const c=creatures[index],p=c.home,dist=7;camera.position.set(p.x,p.y+(c.biome==='sky'?.5:1.2),p.z+dist);yaw=0;pitch=Math.atan2(p.y-camera.position.y,dist);setBiome(c.biome);void openDialogue(index)}
 discoveries.addEventListener('click',e=>{const badge=(e.target as HTMLElement).closest<HTMLButtonElement>('.discovery.found');if(badge)focusCreature(Number(badge.dataset.index))});
-function closeDialogue(){dialogueOpen=false;dialogueSession+=1;mixer.endEncounter();document.querySelector('#dialogue')!.classList.remove('open');}
+function closeDialogue(){dialogueOpen=false;dialogueSession+=1;mixer.endEncounter();document.querySelector('#dialogue')!.classList.remove('open');syncLookHint();}
 document.querySelector('#dialogue-close')!.addEventListener('click',closeDialogue);
 document.querySelector('#listen-sfx')!.addEventListener('click',()=>{if(listenName)void mixer.playSfx(listenName)});
 document.querySelector('#dialogue')!.addEventListener('click',e=>{if(e.target===document.querySelector('#dialogue'))closeDialogue()});
@@ -333,11 +337,12 @@ document.querySelector<HTMLFormElement>('#profile')!.addEventListener('submit',a
  const minimumLoadingTime=new Promise<void>(resolve=>setTimeout(resolve,900));
  try{const answer=await getPersonalizedText();await minimumLoadingTime;document.querySelector('#ai-status')!.textContent=answer.source==='nvidia'?'Personal guide online':'Local guide mode';void mixer.speak(answer.text).catch(()=>{});}
  catch{await minimumLoadingTime;document.querySelector('#ai-status')!.textContent='Local guide mode';void mixer.speak(`Welcome, ${visitor.name}. We’ll connect every discovery to ${visitor.interests} as you explore.`).catch(()=>{});}
- started=true;document.querySelector('#intro')!.classList.add('hidden');
+ started=true;document.querySelector('#intro')!.classList.add('hidden');syncLookHint();
 });
 renderer.domElement.addEventListener('click',event=>{if(!started||dialogueOpen)return;const rect=renderer.domElement.getBoundingClientRect();if(document.pointerLockElement===renderer.domElement)pointer.set(0,0);else pointer.set(((event.clientX-rect.left)/rect.width)*2-1,-((event.clientY-rect.top)/rect.height)*2+1);raycaster.setFromCamera(pointer,camera);const hit=raycaster.intersectObjects(creatures.map(c=>c.object),true).find(intersection=>intersection.object.userData.creature!==undefined);if(hit){openDialogue(Number(hit.object.userData.creature));return}renderer.domElement.requestPointerLock().catch(()=>{});});
 document.addEventListener('mousemove',event=>{if(document.pointerLockElement!==renderer.domElement||dialogueOpen)return;yaw-=event.movementX*.0022;pitch=T.MathUtils.clamp(pitch-event.movementY*.002,-Math.PI/2+.04,Math.PI/2-.04)});
-document.addEventListener('keydown',event=>{keys.add(event.code);if(event.code==='KeyE'&&nearby>=0&&!dialogueOpen)openDialogue(nearby);if(event.code==='Escape'&&dialogueOpen)closeDialogue()});document.addEventListener('keyup',event=>keys.delete(event.code));
+document.addEventListener('keydown',event=>{keys.add(event.code);if(event.code==='KeyE'&&nearby>=0&&!dialogueOpen)openDialogue(nearby);if(event.code==='Escape'){if(dialogueOpen)closeDialogue();else if(document.pointerLockElement)document.exitPointerLock();}const jump=biomeByDigit[event.code];if(jump&&started&&!dialogueOpen){event.preventDefault();travel(jump,false);}});document.addEventListener('keyup',event=>keys.delete(event.code));
+document.addEventListener('pointerlockchange',syncLookHint);
 
 document.querySelector('#sound')!.addEventListener('click',()=>{musicOn=!musicOn;document.querySelector('#sound')!.textContent=musicOn?'♫':'♪';mixer.setMusicEnabled(musicOn)});
 
