@@ -36,6 +36,7 @@ createHttpServer(async (req, res) => {
       const interests = String(body.interests || 'wildlife and ecosystems').slice(0, 240);
       const style = String(body.style || 'curious').slice(0, 40);
       const subject = body.subject && typeof body.subject === 'object' ? body.subject : null;
+      const wantsStream = Boolean(subject) && String(req.headers.accept || '').includes('text/event-stream');
 
       if (!apiKey) {
         return send(res, 200, {
@@ -55,7 +56,7 @@ createHttpServer(async (req, res) => {
         headers: {
           Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
-          Accept: 'application/json',
+          Accept: wantsStream ? 'text/event-stream' : 'application/json',
         },
         body: JSON.stringify({
           model: NVIDIA_MODEL,
@@ -65,7 +66,7 @@ createHttpServer(async (req, res) => {
           ],
           temperature: 0.55,
           max_tokens: 180,
-          stream: false,
+          stream: wantsStream,
           reasoning_effort: 'low',
         }),
       });
@@ -73,12 +74,29 @@ createHttpServer(async (req, res) => {
         const detail = (await response.text()).slice(0, 300);
         throw new Error(`NVIDIA API returned ${response.status}: ${detail}`);
       }
+      if (wantsStream) {
+        if (!response.body) throw new Error('NVIDIA API returned no response stream');
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+        });
+        const reader = response.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(Buffer.from(value));
+        }
+        res.end();
+        return;
+      }
       const data = await response.json();
       const text = data?.choices?.[0]?.message?.content?.trim();
       if (!text) throw new Error('NVIDIA API returned no text');
       send(res, 200, { source: 'nvidia', model: NVIDIA_MODEL, text });
     } catch (error) {
-      send(res, 502, { error: error instanceof Error ? error.message : 'Personalization failed' });
+      if (res.headersSent) res.end();
+      else send(res, 502, { error: error instanceof Error ? error.message : 'Personalization failed' });
     }
     return;
   }
