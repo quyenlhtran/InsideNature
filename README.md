@@ -3,7 +3,7 @@
 > **Step inside. Every life connects.**
 > A free, browser-based 3D ecosystem that teaches how nature works as a connected system, with an AI field guide that explains everything around *you*, and a creator that turns any nature diagram into an explorable 3D scene.
 
-**Built for STEELHACK XIII** · Track / theme: `<add track or theme>` · Demo: `<add link>` · Video: `<add link>`
+**Built for STEELHACK XIII** · Track / theme: `<add track or theme>` · Demo: `<add link>` · 
 
 <p align="center">
   <img
@@ -56,10 +56,19 @@ Inside Nature runs in a web browser with no download, no ticket and no account. 
 - If the AI is unavailable, built-in field-guide text takes over, so the game still runs.
 
 ### 2. Image-to-scene creator: turn any diagram into 3D
+
 - Upload a **PNG or JPEG** of a nature image or textbook diagram (soil layers, a landscape, a labeled model).
 - Choose **NVIDIA Nemotron** or **Google Gemini** to interpret it. You get an **interactive 3D scene** with clickable parts and explanations.
 - Layered diagrams (like soil profiles) become real 3D strata, roots and rocks. **Separate layers** pulls the profile apart so you can inspect each horizon.
 - It works with the teacher's or student's own material, not just our 15 species.
+
+<p align="center">
+  <img
+    width="800"
+    alt="Inside Nature Image-to-3D Scene Demo"
+    src="https://github.com/user-attachments/assets/e702fb84-2c3f-48d6-aac0-5c0d9cbd0905"
+  />
+</p>
 
 ## Why it's different
 
