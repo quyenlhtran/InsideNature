@@ -72,7 +72,7 @@ function geometryFor(shape: SceneObjectSpec['shape'], id: string) {
 function labelSprite(text: string) {
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d')!;
-  context.font = '600 30px Manrope, sans-serif';
+  context.font = '600 30px Newsreader, serif';
   const width = Math.min(620, Math.max(190, Math.ceil(context.measureText(text).width + 54)));
   canvas.width = width;
   canvas.height = 74;
@@ -83,7 +83,7 @@ function labelSprite(text: string) {
   context.lineWidth = 2;
   context.stroke();
   context.fillStyle = '#f7f2df';
-  context.font = '600 30px Manrope, sans-serif';
+  context.font = '600 30px Newsreader, serif';
   context.textAlign = 'center';
   context.textBaseline = 'middle';
   context.fillText(text, width / 2, 37, width - 36);
