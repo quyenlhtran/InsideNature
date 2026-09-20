@@ -104,6 +104,22 @@ Open **http://localhost:3018**.
 
 `npm run dev` fails if `.env` doesn't exist, so create it even if you leave the keys blank.
 
+### Deploy to Vercel
+
+In Vercel, import the repository and set the project **Root Directory** to `InsideNature`.
+The included `vercel.json` runs `npm run build`, serves the Vite output from `dist`, and exposes the existing AI routes as Vercel serverless functions.
+
+Add these environment variables in the Vercel project settings. Use the same names for Production, Preview, and Development as needed:
+
+```text
+NVIDIA_API_KEY=...
+GEMINI_API_KEY=...
+OPENROUTER_API_KEY=...
+ELEVEN_LABS_API_KEY=...
+```
+
+All four are optional. Without them, the local guide fallback still works, while the matching provider features remain unavailable. After saving the variables, redeploy the project. Do not commit `.env` or provider keys to the repository.
+
 ### API keys (all optional)
 
 Add keys to `.env`. It is git-ignored. The app degrades gracefully without them.
