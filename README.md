@@ -1,76 +1,176 @@
-# Inside Nature
+# 🌿 Inside Nature
 
-An educational 3D platform with two modes: a ready-made Inside Nature beginner game and an image-to-scene creator. Students can explore 15 animals and plants or upload a PNG/JPEG diagram or nature image and receive an interactive 3D interpretation.
+> **Step inside. Every life connects.**
+> A free, browser-based 3D ecosystem that teaches how nature works as a connected system, with an AI field guide that explains everything around *you*, and a creator that turns any nature diagram into an explorable 3D scene.
 
-## Run locally
+**Built for STEELHACK XIII** · Track / theme: `<add track or theme>` · Demo: `<add link>` · Video: `<add link>`
+
+---
+
+## The problem
+
+Nature is a web, but we teach it as a list.
+
+A tree cools a stream, the cold water keeps a trout alive, and the river's insects feed the swallows overhead. Most nature education (posters, videos, textbooks) lists what animals *are* and rarely shows why they matter to each other. It gives every learner the same explanation, whatever they care about.
+
+The best alternative is a field trip, a reserve, or a naturalist who can point and say "look". Those cost money, and for many families in poorer communities that door is closed. **A child's chance to understand the living world shouldn't depend on their family's income. Today, it does.**
+
+Four gaps sit behind it:
+
+| Gap | What goes wrong |
+|---|---|
+| **Access** | No ticket, no transport, no guide |
+| **Engagement** | Facts get memorized, not felt, and lose to the screens competing for attention |
+| **Personalization** | A child fascinated by big cats and one fascinated by climate get the same text |
+| **Perspective** | We love the tiger and forget the frog, the hemlock and the insects holding the forest together |
+
+> **How might we give every child, wherever they live, the experience of standing inside an ecosystem and understanding why every living thing in it matters?**
+
+## Our solution
+
+Inside Nature runs in a web browser with no download, no ticket and no account. It has two modes.
+
+### 1. Beginner game: explore a living world
+- Walk through **three biomes** (woodland, river and open sky) and discover **15 animals and plants**.
+- Every species is explained by the **role it plays for others** (shade that cools the stream, insects that link water to sky), not just by its traits, and ends with a short question that checks you understood.
+- An **AI guide personalizes** the welcome and every field note around your name, interests and preferred explanation style. The notes stream in live.
+- A **spoken guide** reads each note aloud, with species sounds (growls, croaks, rustles) and background music.
+- If the AI is unavailable, built-in field-guide text takes over, so the game still runs.
+
+### 2. Image-to-scene creator: turn any diagram into 3D
+- Upload a **PNG or JPEG** of a nature image or textbook diagram (soil layers, a landscape, a labeled model).
+- Choose **NVIDIA Nemotron** or **Google Gemini** to interpret it. You get an **interactive 3D scene** with clickable parts and explanations.
+- Layered diagrams (like soil profiles) become real 3D strata, roots and rocks. **Separate layers** pulls the profile apart so you can inspect each horizon.
+- It works with the teacher's or student's own material, not just our 15 species.
+
+## Why it's different
+
+- **Grounded, not made up.** Every guide note starts from a fixed, verified fact, and the prompt forbids inventing measurements or conservation status. (This is a prompt-level guardrail, not a guarantee. See [Limitations](#limitations).)
+- **The AI never runs code.** In the creator, models return schema-constrained JSON (a `SceneSpec`). The server validates it, and a generic Three.js renderer draws it from a fixed set of shapes, colors and animations. Model-generated code is never executed.
+- **Honest failure.** Each creator button makes exactly one conversion attempt. There is no silent retry, provider switch or fallback scene, and on failure the student sees a short, readable message and can try the other model.
+- **No model files.** All geometry and animation are generated in the browser with Three.js.
+- **Keys stay server-side.** API keys never enter the browser bundle.
+
+## How it works
+
+```
+Browser (Vite + TypeScript + Three.js)
+  ├─ World runtime ─ biomes, species, quiz, journal, camera
+  ├─ Scene renderer ─ SceneSpec → Three.js (safe shape set only)
+  └─ Audio mixer ─ music, species SFX, spoken guide, ducking
+        │
+        ▼  fetch
+Node server (server.mjs)
+  ├─ POST /api/personalize ─ NVIDIA NIM text guide (streaming)
+  ├─ POST /api/scene ─ image → plan → validated SceneSpec
+  │      ├─ NVIDIA Nemotron (visual plan) → Nemotron 3.5 Lightning (scene compile)
+  │      └─ Google Gemini (direct image → structured scene)
+  └─ POST /api/speak ─ ElevenLabs text-to-speech
+```
+
+Models are set in [app.config.mjs](app.config.mjs):
+
+| Purpose | Model |
+|---|---|
+| Guide text and scene compilation | `nvidia/nemotron-3.5-lightning-30b-a3b` |
+| Image understanding (NVIDIA path) | `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` |
+| Image → scene (independent path) | `gemini-3.1-pro-preview` |
+| Voice | ElevenLabs (voice id in config) |
+
+## Tech stack
+
+**TypeScript** · **Three.js** · **Vite** · **Node.js** (plain `http` server, no framework) · **NVIDIA NIM** (Nemotron) · **Google Gemini** · **ElevenLabs**
+
+## Run it locally
+
+Requires **Node 20.6+** (the scripts use `node --env-file`).
 
 ```bash
 npm install
-npm run build
+cp .env.example .env      # Windows PowerShell: Copy-Item .env.example .env
 npm run dev
 ```
 
-Open `http://localhost:3018`.
+Open **http://localhost:3018**.
 
-Development mode watches server-side files as well as browser files. Changes to
-AI handlers and prompts restart Node automatically, preventing a new frontend
-from continuing to call an older in-memory `/api/scene` handler.
+`npm run dev` fails if `.env` doesn't exist, so create it even if you leave the keys blank.
 
-Copy `.env.example` to `.env` and add `NVIDIA_API_KEY`, `GEMINI_API_KEY`, or both
-(and `ELEVEN_LABS_API_KEY` if you want spoken guide audio). The real `.env` file is ignored by Git.
-Non-secret settings such as the server port, model name, and ElevenLabs voice
-id live in `app.config.mjs`.
+### API keys (all optional)
+
+Add keys to `.env`. It is git-ignored. The app degrades gracefully without them.
+
+| Variable | Enables | Without it |
+|---|---|---|
+| `NVIDIA_API_KEY` ([build.nvidia.com](https://build.nvidia.com)) | Personalized notes, Nemotron creator | Built-in guide text; Nemotron button unavailable |
+| `GEMINI_API_KEY` ([aistudio.google.com/apikey](https://aistudio.google.com/apikey)) | Gemini creator | Gemini button unavailable |
+| `ELEVEN_LABS_API_KEY` ([elevenlabs.io](https://elevenlabs.io)) | Spoken guide, regenerating audio | Silent guide; static SFX and music still play |
+
+Non-secret settings (port, model names, voice id) live in [app.config.mjs](app.config.mjs). The server logs which providers are enabled at startup.
+
+### Scripts
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Dev server; restarts on server-side changes |
+| `npm run check` | Type-check |
+| `npm run build` | Type-check and production build |
+| `npm test` | Server tests for the scene pipeline |
+| `npm run generate-audio` | Regenerate species SFX and music (needs the ElevenLabs key; `-- --force` overwrites) |
 
 ## Controls
 
-- `W A S D`: move
-- `Space` / `Shift`: rise and descend
-- Click: select an animal or plant directly; click empty space to look around
-- `E`: open the nearby focused animal or plant
-- Biome buttons: jump between water, woodland, and sky
+| Input | Action |
+|---|---|
+| `W A S D` | Move |
+| `Space` / `Shift` | Rise / descend |
+| Click | Select an animal or plant; click empty space to look around |
+| `E` | Open the nearby focused animal or plant (or scene object) |
+| Biome buttons | Jump between water, woodland and sky |
 
-In a generated scene, click an object or aim at it and press `E` to read its description.
+## Project structure
 
-## Image-to-scene creator
-
-The creator resizes the uploaded image in the browser and sends it to the server-only `/api/scene` route. Students explicitly choose **Try NVIDIA Nemotron** or **Try Gemini Pro**. Nemotron inspects the pixels, chooses `cutaway`, `landscape`, or `labeled-model`, and sends its visual plan to the NVIDIA-hosted structured scene compiler. Gemini is an independent direct image-to-structured-scene option. Both produce the same declarative `SceneSpec`, which the server validates before the browser sees it. The generic Three.js renderer supports a safe set of reusable shapes, labels, colors, and animations; it never executes model-generated code.
-
-The NVIDIA path uses `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` for visual planning and the NVIDIA-authored `nvidia/nemotron-3.5-lightning-30b-a3b` for structured scene compilation. The independent alternative is `gemini-3.1-pro-preview`. These models are configured in `app.config.mjs`. The app does not set output-token caps or request timeouts; each provider can still enforce its own service limits. A model button is unavailable at the API level when its server-side key is missing.
-
-A generated scene is an educational interpretation of the visible image, not an exact reconstruction of hidden 3D geometry.
-
-Layered diagrams use dedicated procedural geometry instead of unrelated boxes. The chosen model records the visible horizons and their order and emits one `stratum` object per layer, while the renderer builds irregular solid surfaces with real depth. Soil and rock cutaways can also contain `root` and `rock` objects. Students can click every part for its explanation or use **Separate layers** to pull a profile apart and inspect the horizons individually.
-
-Both paths request schema-constrained JSON rather than relying on prompt-only formatting. The server parses and validates the SceneSpec and checks important visual rules such as requiring real strata for a detected soil profile. Each button makes exactly one conversion attempt: there is no automatic repair, retry, provider switch, or fallback scene. On failure, the original preview remains selected and the student sees a short model-level error so they can manually try the other button; raw JSON parser messages are never shown.
-
-## NVIDIA guide
-
-The server calls NVIDIA's OpenAI-compatible `POST /v1/chat/completions` endpoint. The default text and scene-compilation model is NVIDIA Nemotron 3.5 Lightning; switch `NVIDIA_MODEL` in `app.config.mjs` to another model available to your NVIDIA account. The API key never enters the browser bundle. If the key is missing or the service is unavailable, the ready-made game uses its built-in field-guide copy.
-
-AI code is kept separate from the game runtime:
-
-- `server/ai/prompts.mjs`: every server-side system prompt, user prompt, and fallback message
-- `server/ai/guide.mjs`: NVIDIA requests, response parsing, and `/api/personalize` handling
-- `server/ai/scene.mjs`: Nemotron planning/routing, scene compilation, `SceneSpec` validation, and `/api/scene` handling
-- `server/ai/speech.mjs`: ElevenLabs text-to-speech handling
-- `src/ai/guide.ts`: browser requests, stream parsing, quiz validation, and local quiz fallback
-- `src/ai/scene.ts`: upload preparation and image-to-scene requests
-- `src/world/generated-scene.ts`: generic `SceneSpec`-to-Three.js renderer
-- `server.mjs`: server startup and route wiring only
-
-Start in `server/ai/prompts.mjs` when reviewing or changing the AI's voice, reading level, or output rules.
-
-All geometry and animation are generated in the browser with Three.js; no external 3D model files are required.
-
-## Audio
-
-Animal SFX, plant rustles, and background music are static MP3s in `public/audio/`. Generate them locally (not at play time):
-
-```bash
-npm run generate-audio
-npm run generate-audio -- --force
+```
+server.mjs              Startup and route wiring
+server/ai/
+  prompts.mjs           Every system/user prompt and fallback message
+  guide.mjs             /api/personalize (NVIDIA, streaming)
+  scene.mjs             /api/scene: planning, compilation, validation
+  scene-schema.mjs      SceneSpec schema
+  speech.mjs            /api/speak (ElevenLabs)
+  scene.test.mjs        Pipeline tests
+src/
+  world/runtime.ts      Game world, UI and creator flow
+  world/generated-scene.ts   SceneSpec → Three.js renderer
+  ai/                   Browser guide and scene requests
+  audio/mixer.ts        Music, SFX, voice, ducking
+public/audio/           Static MP3s (species sounds, music)
+scripts/generate-audio.mjs
 ```
 
-`npm run generate-audio` runs `node --env-file=.env scripts/generate-audio.mjs`, so `ELEVEN_LABS_API_KEY` must be in `.env`. Existing files are skipped unless you pass `--force`.
+To review or change the guide's voice, reading level or output rules, start in [server/ai/prompts.mjs](server/ai/prompts.mjs).
 
-Production needs `ELEVEN_LABS_API_KEY` only for `POST /api/speak` (spoken NVIDIA/fallback text). SFX and music are committed/served as static files and do not call ElevenLabs at runtime.
+## Limitations
+
+We'd rather be upfront about what this is today:
+
+- **Desktop only.** Movement is WASD with mouse look and there are no touch controls yet, so it isn't usable on phones. This is our biggest gap, because the people who most need free nature education are the most likely to be on a phone.
+- **Needs a connection and a running server.** The 3D scene may also run slowly on low-end devices, and there is no "lite" mode yet.
+- **Accuracy is guarded, not guaranteed.** Notes start from verified facts and the prompt forbids invention, but the output isn't automatically checked. A generated scene is an educational *interpretation* of the image, not an exact reconstruction.
+- **No per-user rate limiting or request timeouts** on the API routes, and the server binds to `0.0.0.0`. Fine for a demo, but it needs hardening before public deployment because it spends API credits.
+- Progress isn't saved between sessions. English only.
+
+## What's next
+
+- Touch controls and a lite rendering mode for phones and low-end devices
+- Offline-capable install (PWA) with cached field-guide text
+- Server-side species lookup (send only an id), rate limits and timeouts
+- Shuffled, three-option quizzes and a completion moment
+- More languages and a teacher view for uploading class material
+
+## Team
+
+`<add names, roles, links>`
+
+## Acknowledgements
+
+Powered by NVIDIA NIM (Nemotron), Google Gemini and ElevenLabs. 3D rendering by [Three.js](https://threejs.org).
