@@ -32,10 +32,10 @@ function send(res, status, payload) {
 function fallbackQuiz(quiz) {
   const attempt = Number.isInteger(quiz.attempt) ? quiz.attempt : 1;
   const questions = [
-    `Which statement about ${quiz.name} matches the field note?`,
-    `What is the best explanation of ${quiz.name}'s role here?`,
-    `Which ecological connection is true for ${quiz.name}?`,
-    `Based on what you learned, which observation about ${quiz.name} is accurate?`,
+    `Which fact about ${quiz.name} is true?`,
+    `How does ${quiz.name} help its home?`,
+    `What is ${quiz.name} connected to?`,
+    `What did you learn about ${quiz.name}?`,
   ];
   const choices = Array.isArray(quiz.choices) ? quiz.choices.slice(0, 4).map(choice => String(choice).slice(0, 120)) : [];
   const originalAnswer = Number(quiz.answer);
@@ -82,8 +82,8 @@ createHttpServer(async (req, res) => {
         return send(res, 200, {
           source: 'fallback',
           text: subject
-            ? `${subject.fact} Since you are interested in ${interests}, notice how ${subject.name} connects to the wider food web around you.`
-            : `Welcome, ${name}. Your journey will follow ${interests}, with each animal and plant explained in a ${style} way. Look closely—every living thing here leaves a clue.`,
+            ? `${subject.fact} Look around and see how ${subject.name} is connected to other living things nearby.`
+            : `Welcome, ${name}! Get ready to explore ${interests}. Look closely—every animal and plant has a story to share.`,
         });
       }
 
@@ -91,10 +91,10 @@ createHttpServer(async (req, res) => {
         ? quiz.previousQuestions.slice(-8).map(question => String(question).slice(0, 240))
         : [];
       const prompt = quiz
-        ? `Create a new quiz question about ${String(quiz.name).slice(0, 100)}. Scientific ground truth: ${String(quiz.fact).slice(0, 600)}. Do not repeat these earlier questions: ${JSON.stringify(previousQuestions)}. Write one clear question and 2 concise answer choices. Exactly one choice must be correct and grounded in the fact. Make the distractor plausible but scientifically false. Return strict JSON only in this shape: {"question":"...","choices":["...","..."],"answer":0}. The answer is the zero-based index of the correct choice.`
+        ? `Create a fun, clear quiz question about ${String(quiz.name).slice(0, 100)} for students ages 8 to 16. Use this fact: ${String(quiz.fact).slice(0, 600)}. Do not repeat these earlier questions: ${JSON.stringify(previousQuestions)}. Use short sentences and common words. Write one question and 2 short answer choices. Exactly one choice must be correct. Return strict JSON only in this shape: {"question":"...","choices":["...","..."],"answer":0}. The answer is the zero-based index of the correct choice.`
         : subject
-          ? `Explain this field-guide object to ${name}: ${subject.name}. Ground truth: ${subject.fact}. The visitor likes ${interests} and prefers a ${style} explanation. Write 2 vivid, scientifically careful sentences, under 75 words. Do not invent measurements or conservation status.`
-        : `Write a welcoming pre-game introduction for ${name}, who likes ${interests} and prefers a ${style} explanation. This is a 3D ecosystem where they click animals and plants to discover their ecological roles. Write 2 inviting sentences, under 60 words.`;
+          ? `Tell ${name} about ${subject.name}. Use this true fact: ${subject.fact}. The visitor likes ${interests} and prefers a ${style} explanation. Write 2 fun, friendly sentences for students ages 8 to 16, under 45 words total. Use short sentences and common words. If a science word is needed, explain it right away. Do not invent facts, measurements, or conservation status.`
+          : `Write a fun welcome for ${name}, who likes ${interests} and prefers a ${style} explanation. This is a 3D world where students explore animals and plants. Write 2 friendly sentences for ages 8 to 16, under 40 words. Use short sentences and common words.`;
 
       const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
         method: 'POST',
@@ -106,7 +106,7 @@ createHttpServer(async (req, res) => {
         body: JSON.stringify({
           model: NVIDIA_MODEL,
           messages: [
-            { role: 'system', content: quiz ? 'You are Inside Nature, an accurate educational field guide. Return valid JSON only.' : 'You are Inside Nature, a warm, accurate field guide. Return plain text only.' },
+            { role: 'system', content: quiz ? 'You are Inside Nature, a fun and accurate guide for school-age students. Keep all language easy to understand. Return valid JSON only.' : 'You are Inside Nature, a fun, warm, and accurate guide for school-age students. Keep all language easy to understand. Return plain text only.' },
             { role: 'user', content: prompt },
           ],
           temperature: quiz ? 0.75 : 0.55,
