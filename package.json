@@ -7,7 +7,8 @@
     "dev": "node --env-file=.env server.mjs",
     "build": "tsc --noEmit && vite build",
     "check": "tsc --noEmit",
-    "preview": "node --env-file=.env server.mjs"
+    "preview": "node --env-file=.env server.mjs",
+    "generate-audio": "node --env-file=.env scripts/generate-audio.mjs"
   },
   "dependencies": {
     "three": "^0.159.0"
