@@ -1,6 +1,7 @@
 export type SceneShape = 'box' | 'sphere' | 'cone' | 'half-cone' | 'cylinder' | 'torus' | 'plane' | 'stratum' | 'root' | 'rock';
 export type SceneAnimation = 'none' | 'spin' | 'float' | 'pulse' | 'flow';
 export type Vector3Tuple = [number, number, number];
+export type SceneProvider = 'nvidia' | 'gemini';
 
 export type SceneObjectSpec = {
   id: string;
@@ -26,12 +27,13 @@ export type SceneSpec = {
 };
 
 export type GeneratedScene = {
-  source: 'nvidia' | 'fallback';
+  source: SceneProvider;
   model?: string;
   pipeline?: {
     planner: string;
     compiler: string;
     renderStrategy: 'cutaway' | 'landscape' | 'labeled-model';
+    compilation?: 'first-pass';
   };
   scene: SceneSpec;
 };
@@ -61,12 +63,12 @@ export async function prepareImage(file: File): Promise<string> {
   }
 }
 
-export async function generateScene(file: File): Promise<GeneratedScene> {
+export async function generateScene(file: File, provider: SceneProvider): Promise<GeneratedScene> {
   const image = await prepareImage(file);
   const response = await fetch('/api/scene', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({image, filename: file.name}),
+    body: JSON.stringify({image, filename: file.name, provider}),
   });
   const body = await response.json().catch(() => ({})) as Partial<GeneratedScene> & {error?: string};
   if (!response.ok || !body.scene) throw new Error(body.error || 'We could not build a scene from that image.');
