@@ -44,9 +44,18 @@ let seed=481516;const random=()=>{seed=(seed*16807)%2147483647;return(seed-1)/21
 const range=(min:number,max:number)=>min+random()*(max-min);
 const tint=(hex:string,amount:number)=>new T.Color(hex).offsetHSL(0,(random()-.5)*amount*.4,(random()-.5)*amount).getStyle();
 const noise2=(x:number,z:number)=>Math.sin(x*.11)*Math.cos(z*.13)+Math.sin(x*.045+z*.08)*1.4+Math.sin((x+z)*.021)*2.1;
+// The scene's hemisphere light bounces dark green off the ground, which turns pale
+// hide, plumage and fur green from below. A trace of self-colour holds the hue.
+const selfLit=(color:T.ColorRepresentation,amount=.17)=>new T.Color(color).multiplyScalar(amount);
+const lit=(color:T.ColorRepresentation,roughness=.8)=>new T.MeshStandardMaterial({color,roughness,emissive:selfLit(color)});
+// Dark above, pale below: the countershading nearly every wild animal wears.
+function countershade(geometry:T.BufferGeometry,belly:string,back:string,low:number,high:number){const position=geometry.attributes.position as T.BufferAttribute;const colors=new Float32Array(position.count*3);const under=new T.Color(belly),over=new T.Color(back),c=new T.Color();for(let i=0;i<position.count;i++){c.copy(under).lerp(over,T.MathUtils.smoothstep(position.getY(i),low,high));colors[i*3]=c.r;colors[i*3+1]=c.g;colors[i*3+2]=c.b}geometry.setAttribute('color',new T.BufferAttribute(colors,3));return geometry}
+// A tapered bone spanning two joint positions — the spine of every jointed limb.
+function bone(from:T.Vector3,to:T.Vector3,fromRadius:number,toRadius:number,material:T.Material,segments=8){const axis=to.clone().sub(from),length=axis.length();const m=mesh(new T.CylinderGeometry(toRadius,fromRadius,length,segments),material);m.position.copy(from).addScaledVector(axis,.5);m.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),axis.normalize());return m}
 const swayables:{object:T.Object3D;phase:number;strength:number}[]=[];
 const cloudDrifters:{object:T.Object3D;phase:number}[]=[];
-const wingBeats:{pivot:T.Object3D;rest:number;amp:number;speed:number;phase:number}[]=[];
+// Anything that rocks about one axis: wings, fins, swishing tails.
+const wingBeats:{pivot:T.Object3D;axis?:'x'|'y';rest:number;amp:number;speed:number;phase:number}[]=[];
 
 // The forest floor's height field. The terrain mesh displaces its vertices with it, and
 // anything rooted in the ground reads the same function, so it lands flush instead of at y=0.
@@ -57,6 +66,7 @@ const groundHeight=(x:number,z:number)=>GROUND_BASE+groundBump(x,z);
 // meets bark on a slope instead of leaving a sliver of daylight under the tree.
 const ROOT_DEPTH=.12;
 const rootHeight=(x:number,z:number,scale:number)=>groundHeight(x,z)-ROOT_DEPTH*scale;
+const grounded=(x:number,z:number,offset=0):[number,number,number]=>[x,groundHeight(x,z)+offset,z];
 const rooted=(x:number,z:number,scale:number):[number,number,number]=>[x,rootHeight(x,z,scale),z];
 
 // Forest floor: noise-shaded rolling terrain either side of a winding river.
@@ -78,13 +88,27 @@ function tree(x:number,z:number,scale:number){const g=new T.Group();const lean=r
  for(const[y,r,c]of[[3.4,1.65,'#2f6741'],[4.3,1.35,'#3f7b49'],[5.1,.95,'#57945a']]as[number,number,string][]){const count=Math.max(2,Math.round(r*2.6));for(let i=0;i<count;i++){const puff=foliagePuff(r,c);puff.position.set(range(-r*.55,r*.55),y+range(-r*.25,r*.25),range(-r*.55,r*.55));g.add(puff)}}
  for(let b=0;b<2;b++){const angle=b*Math.PI+range(-.3,.3);const branch=cylinder(.05,.13,range(1,1.5),barkColor,8);branch.position.set(Math.cos(angle)*.3,2.9+b*.3,Math.sin(angle)*.3);branch.rotation.z=Math.PI/2-.55;branch.rotation.y=angle;g.add(branch);for(let i=0;i<2;i++){const puff=foliagePuff(.85,'#3f7b49');puff.position.set(Math.cos(angle)*1.5+range(-.3,.3),3.2+b*.3+range(-.2,.2),Math.sin(angle)*1.5+range(-.3,.3));g.add(puff)}}
  g.position.set(x,rootHeight(x,z,scale),z);g.scale.setScalar(scale);scene.add(g);return g}
-for(let i=0;i<42;i++){let x=(random()-.5)*58,z=(random()-.5)*58;if(Math.abs(x-2)<8)x+=x<2?-8:8;tree(x,z,.72+random()*.65)}
+// Where the deer stands. The clearing below and its own placement read the same spot,
+// so moving the deer moves the gap in the trees with it.
+const DEER_X=-7.5,DEER_Z=-3.5;
+// Keep the river corridor clear, the two bridge landings with it, and a clearing around
+// the deer so it is not buried in canopy. Each nudge reuses the sampled position, so the
+// rest of the forest lands exactly where it did before.
+for(let i=0;i<42;i++){let x=(random()-.5)*58,z=(random()-.5)*58;if(Math.abs(x-2)<8)x+=x<2?-8:8;if(Math.abs(z-2)<3.6&&x>-13&&x<17)z+=z<2?-5.5:5.5;if(Math.hypot(x-DEER_X,z-DEER_Z)<4.6)x-=7;tree(x,z,.72+random()*.65)}
 
-function grassTuft(x:number,z:number){const g=new T.Group();const bladeCount=3+Math.floor(random()*3);for(let i=0;i<bladeCount;i++){const height=.5+random()*.55;const blade=mesh(new T.ConeGeometry(.06,height,6),mat(tint(random()>.4?'#6f984e':'#92aa50',.14)),false);blade.position.set(range(-.13,.13),height/2,range(-.13,.13));blade.rotation.z=range(-.2,.2);blade.rotation.y=random()*Math.PI;g.add(blade)}g.position.set(x,.02,z);scene.add(g);swayables.push({object:g,phase:random()*Math.PI*2,strength:.055});return g}
-for(let i=0;i<60;i++){const x=(random()-.5)*56,z=(random()-.5)*56;if(Math.abs(x-2)<7.5)continue;grassTuft(x,z)}
+function isLand(x:number,z:number){
+  // Keep all grassy ground cover outside the river channel. The river sits in a
+  // central band roughly x = 2 ± 5.5 and z = ±33, so any point in that footprint
+  // is water and should not receive flowers or grass.
+  return !(Math.abs(x-2) < 5.5 && Math.abs(z) < 33);
+}
+function grassTuft(x:number,z:number){if(!isLand(x,z))return null;const g=new T.Group();const bladeCount=3+Math.floor(random()*3);for(let i=0;i<bladeCount;i++){const height=.5+random()*.55;const blade=mesh(new T.ConeGeometry(.06,height,6),mat(tint(random()>.4?'#6f984e':'#92aa50',.14)),false);blade.position.set(range(-.13,.13),height/2,range(-.13,.13));blade.rotation.z=range(-.2,.2);blade.rotation.y=random()*Math.PI;g.add(blade)}g.position.set(x,groundHeight(x,z)+.02,z);scene.add(g);swayables.push({object:g,phase:random()*Math.PI*2,strength:.055});return g}
+for(let i=0;i<120;i++){const x=(random()-.5)*56,z=(random()-.5)*56;if(!isLand(x,z))continue;grassTuft(x,z)}
+for(let i=0;i<60;i++){const x=(random()-.5)*18,z=(random()-.5)*14;if(!isLand(x+2,z+1))continue;grassTuft(x+2,z+1)}
 
-function flower(x:number,z:number){const g=new T.Group();const stemHeight=.4+random()*.25;const stem=cylinder(.022,.03,stemHeight,tint('#48733d',.1),8);stem.position.y=stemHeight/2;g.add(stem);for(const side of[-1,1]){const leaf=mesh(new T.SphereGeometry(.09,8,6),mat('#4f7a3f'),false);leaf.scale.set(1.8,.25,.7);leaf.position.set(side*.09,stemHeight*.45,0);leaf.rotation.y=side*.6;g.add(leaf)}const petals=5+Math.floor(random()*3);const hue=random();const petalColor=hue>.66?'#f5d7dc':hue>.33?'#f4dd73':'#eef0e8';for(let p=0;p<petals;p++){const petal=sphere(.085,tint(petalColor,.08),8,6);petal.scale.set(1.7,.5,1);const a=p*(Math.PI*2/petals);petal.position.set(Math.cos(a)*.12,stemHeight+.02,Math.sin(a)*.12);petal.rotation.y=a;g.add(petal)}const center=sphere(.05,'#f0c23e',8,6);center.position.y=stemHeight+.03;g.add(center);g.position.set(x,0,z);scene.add(g);swayables.push({object:g,phase:random()*Math.PI*2,strength:.03});return g}
-for(let i=0;i<26;i++){const x=(random()-.5)*46,z=(random()-.5)*46;if(Math.abs(x-2)<6)continue;flower(x,z)}
+function flower(x:number,z:number){if(!isLand(x,z))return null;const g=new T.Group();const stemHeight=.4+random()*.25;const stem=cylinder(.022,.03,stemHeight,tint('#48733d',.1),8);stem.position.y=stemHeight/2;g.add(stem);for(const side of[-1,1]){const leaf=mesh(new T.SphereGeometry(.09,8,6),mat('#4f7a3f'),false);leaf.scale.set(1.8,.25,.7);leaf.position.set(side*.09,stemHeight*.45,0);leaf.rotation.y=side*.6;g.add(leaf)}const petals=5+Math.floor(random()*3);const hue=random();const petalColor=hue>.66?'#f5d7dc':hue>.33?'#f4dd73':'#eef0e8';for(let p=0;p<petals;p++){const petal=sphere(.085,tint(petalColor,.08),8,6);petal.scale.set(1.7,.5,1);const a=p*(Math.PI*2/petals);petal.position.set(Math.cos(a)*.12,stemHeight+.02,Math.sin(a)*.12);petal.rotation.y=a;g.add(petal)}const center=sphere(.05,'#f0c23e',8,6);center.position.y=stemHeight+.03;g.add(center);g.position.set(x,groundHeight(x,z),z);scene.add(g);swayables.push({object:g,phase:random()*Math.PI*2,strength:.03});return g}
+for(let i=0;i<70;i++){const x=(random()-.5)*46,z=(random()-.5)*46;if(!isLand(x,z))continue;flower(x,z)}
+for(let i=0;i<40;i++){const x=(random()-.5)*18,z=(random()-.5)*14;if(!isLand(x+2,z+1))continue;flower(x+2,z+1)}
 
 // Underwater world: noise-shaded seabed, rock piles, swaying kelp, and coral accents.
 // Constrained to the river's own footprint (between the two banks) so nothing sits beneath dry land.
@@ -103,28 +127,195 @@ const bubbles:T.Mesh[]=[];for(let i=0;i<48;i++){const bubble=new T.Mesh(new T.Sp
 // Sky landmarks: puffier, drifting clouds with per-puff shading.
 for(let i=0;i<15;i++){const cloud=new T.Group();const puffCount=5+Math.floor(random()*4);for(let j=0;j<puffCount;j++){const puff=new T.Mesh(new T.SphereGeometry(1+range(-.25,.65),12,8),new T.MeshStandardMaterial({color:tint('#fff7df',.05),roughness:1,transparent:true,opacity:range(.78,.94)}));puff.scale.y=.45+random()*.2;puff.position.set(j*1.3+range(-.5,.5),random()*.65,range(-.6,.6));cloud.add(puff)}cloud.position.set((random()-.5)*60,12+random()*15,(random()-.5)*60);cloud.scale.setScalar(range(.8,1.35));scene.add(cloud);cloudDrifters.push({object:cloud,phase:random()*Math.PI*2})}
 
-function animalBody(color:string,accent:string){const g=new T.Group();const body=sphere(.65,color,22,16);body.scale.set(1.35,.78,.72);body.rotation.y=Math.PI/2;g.add(body);const neck=cylinder(.28,.36,.5,tint(color,.08),10);neck.position.set(0,.3,-.62);neck.rotation.x=.7;g.add(neck);const head=sphere(.43,color,20,14);head.position.set(0,.42,-.85);g.add(head);const snout=sphere(.24,tint(color,.08),14,10);snout.scale.set(1,.75,1.3);snout.position.set(0,.3,-1.18);g.add(snout);const eye=sphere(.055,'#101b17',8,6);eye.position.set(.3,.5,-1.05);g.add(eye);const eye2=eye.clone();eye2.position.x=-.3;g.add(eye2);const nose=sphere(.09,accent,8,6);nose.position.set(0,.28,-1.32);g.add(nose);return g}
-function deer(){const g=animalBody('#a86a35','#33251d');g.scale.setScalar(.85);for(const x of[-.4,.4])for(const z of[-.3,.35]){const leg=cylinder(.07,.09,1.2,tint('#74472d',.08),8);leg.position.set(x,-.72,z);g.add(leg);const paw=sphere(.08,'#2c2018',6,5);paw.position.set(x,-1.3,z);g.add(paw)}for(const x of[-.23,.23]){const antler=cylinder(.035,.055,.8,'#d2b27b',6);antler.position.set(x,1,-.85);antler.rotation.z=x*1.5;g.add(antler);const tine=cylinder(.02,.03,.32,'#d2b27b',5);tine.position.set(x+(x<0?-.14:.14),1.28,-.7);tine.rotation.z=x*2.2;g.add(tine)}return g}
-function fox(){const g=animalBody('#c55e32','#342018');for(const x of[-.35,.35])for(const z of[-.25,.3]){const leg=cylinder(.06,.075,.9,tint('#9e432b',.08),8);leg.position.set(x,-.65,z);g.add(leg);const paw=sphere(.07,'#241610',6,5);paw.position.set(x,-1.08,z);g.add(paw)}for(const x of[-.42,.42]){const ear=mesh(new T.ConeGeometry(.2,.55,7),mat('#9e432b'));ear.position.set(x,.9,-.77);g.add(ear);const earInner=mesh(new T.ConeGeometry(.11,.32,6),mat('#2c1a12'));earInner.position.set(x,.85,-.7);g.add(earInner)}const tail=mesh(new T.ConeGeometry(.35,1.8,10),mat('#d87542'));tail.rotation.x=-Math.PI/2;tail.position.set(0,.15,1.25);g.add(tail);const tailTip=sphere(.2,'#f4ede2',8,6);tailTip.position.set(0,.15,2.05);g.add(tailTip);return g}
-function rabbit(){const g=animalBody('#9b8f7d','#594b42');g.scale.setScalar(.65);for(const x of[-.28,.28])for(const z of[-.15,.2]){const leg=cylinder(.05,.06,.5,tint('#7d7264',.08),7);leg.position.set(x,-.42,z);g.add(leg)}for(const x of[-.2,.2]){const ear=sphere(.18,'#a79c8c',10,8);ear.scale.set(1,2.8,.6);ear.position.set(x,1,-.72);g.add(ear);const earInner=sphere(.11,'#c9a99a',8,6);earInner.scale.set(1,2.6,.5);earInner.position.set(x,1,-.66);g.add(earInner)}const tail=sphere(.15,'#f4f0e6',8,6);tail.position.set(0,.1,.9);g.add(tail);return g}
-function fish(color:string){const g=new T.Group();const body=sphere(.62,color,18,14);body.scale.set(1.55,.72,.45);g.add(body);const tail=mesh(new T.ConeGeometry(.55,1,4),mat(color));tail.rotation.z=-Math.PI/2;tail.position.x=-1.15;g.add(tail);const dorsal=mesh(new T.ConeGeometry(.3,.5,4),mat(tint(color,.15)));dorsal.rotation.x=Math.PI;dorsal.position.set(0,.42,0);g.add(dorsal);for(const side of[-1,1]){const fin=mesh(new T.ConeGeometry(.18,.4,4),mat(tint(color,.1)));fin.rotation.z=side*1.1;fin.position.set(.15,-.05,side*.3);g.add(fin)}const eye=sphere(.07,'#101b17',8,6);eye.position.set(.68,.2,.35);g.add(eye);return g}
-function turtle(){const g=new T.Group();const shell=sphere(.7,'#527945',16,12);shell.scale.set(1.25,.45,1);g.add(shell);for(let i=0;i<5;i++){const scute=sphere(.14,tint('#3f5c37',.1),8,6);scute.scale.set(1,.4,1);const a=(i/5)*Math.PI*2;scute.position.set(Math.cos(a)*.4,.28,Math.sin(a)*.55);g.add(scute)}const head=sphere(.3,'#7aa068',10,8);head.position.x=1;g.add(head);for(const z of[-.65,.65])for(const x of[-.45,.45]){const fin=mesh(new T.ConeGeometry(.18,.65,6),mat('#71935f'));fin.rotation.z=Math.PI/2;fin.position.set(x,0,z);g.add(fin)}return g}
-function ray(){const g=new T.Group();const wing=mesh(new T.SphereGeometry(.9,20,10),mat('#487b84'));wing.scale.set(1.7,.16,1);g.add(wing);for(let i=0;i<6;i++){const spot=sphere(.05,'#c9e9e5',6,5);spot.position.set(range(-1,1),.09,range(-.7,.7));g.add(spot)}const tail=cylinder(.03,.07,2.3,'#365e65',8);tail.rotation.z=Math.PI/2;tail.position.x=-1.6;g.add(tail);return g}
+// ── Mammals ──────────────────────────────────────────────────────────────────
+type Pelt={coat:string;belly:string;muzzle:string;nose:string;iris:string;foot:string;inner:string;sock?:string;stripe?:string;stripes?:number;
+ girth:number;depth:number;head:number;neck:number;neckTilt:number;leg:number;legGirth:number;hoofed:boolean;
+ ear:'tall'|'pointed'|'round';earSize:number;earTilt:number;earBack?:string;eyeSet:number;snout:number;snoutWidth:number;whiskers?:boolean};
+// Barrel chest, tucked waist, heavy hindquarters: the shape under any four-legged coat.
+const beastProfile:[number,number][]=[[.002,-.92],[.17,-.88],[.3,-.76],[.4,-.58],[.45,-.34],[.46,-.06],[.43,.2],[.455,.44],[.44,.66],[.31,.85],[.002,.95]];
+// Resampled along a spline: a coarse lathe cannot carry stripes in its vertex colours,
+// and the extra rings smooth the barrel at the same time.
+const beastRings=new T.CatmullRomCurve3(beastProfile.map(([r,y])=>new T.Vector3(r,y,0))).getPoints(95).map(v=>new T.Vector2(Math.max(v.x,.002),v.y));
+function beastTorso(p:Pelt){const geometry=new T.LatheGeometry(beastRings,30);geometry.rotateX(Math.PI/2);geometry.scale(p.girth*.86,p.depth,1);geometry.computeVertexNormals();countershade(geometry,p.belly,p.coat,-.46*p.depth,-.18*p.depth);
+ // Stripes are bands wrapped around the whole barrel and skewed down the flanks,
+ // not decals laid along the spine.
+ if(p.stripes){const position=geometry.attributes.position as T.BufferAttribute,color=geometry.attributes.color as T.BufferAttribute,dark=new T.Color(p.stripe!),c=new T.Color();
+  for(let i=0;i<position.count;i++){const band=T.MathUtils.smoothstep(Math.sin(position.getZ(i)*p.stripes+Math.abs(position.getX(i))*2.4),.3,.62);c.fromBufferAttribute(color,i).lerp(dark,band*.92);color.setXYZ(i,c.r,c.g,c.b)}}
+ return geometry}
+// plan lists the joints as [alongBody, down] fractions of the leg, so a hock can zig-zag.
+function limb(parent:T.Object3D,x:number,y:number,z:number,length:number,girth:number,plan:[number,number][],upper:T.Material,lower:T.Material,footMaterial:T.Material,hoofed:boolean){
+ const points=plan.map(([dz,dy])=>new T.Vector3(x,y+dy*length,z+dz*length)),last=points.length-1;
+ for(let i=0;i<last;i++){const wide=girth*(1-i*.19),narrow=girth*(1-(i+1)*.19),skin=i>=last-1?lower:upper;
+  parent.add(bone(points[i],points[i+1],wide,narrow,skin,7));
+  if(i){const knuckle=mesh(new T.SphereGeometry(wide*1.05,8,6),skin);knuckle.position.copy(points[i]);parent.add(knuckle)}}
+ const toe=points[last];
+ if(hoofed)for(const half of[-1,1]){const hoof=mesh(new T.CylinderGeometry(girth*.46,girth*.56,girth*1.7,7),footMaterial);hoof.position.set(toe.x+half*girth*.38,toe.y-girth*.7,toe.z);parent.add(hoof)}
+ else{const pad=mesh(new T.SphereGeometry(.5,10,8),footMaterial);pad.scale.set(girth*2.1,girth*1.1,girth*2.8);pad.position.set(toe.x,toe.y-girth*.4,toe.z+girth*.3);parent.add(pad);
+  for(let t=0;t<3;t++){const digit=mesh(new T.SphereGeometry(.5,7,6),footMaterial);digit.scale.set(girth*.85,girth*.6,girth*1.4);digit.position.set(toe.x+(t-1)*girth*.62,toe.y-girth*.42,toe.z+girth*1.05);parent.add(digit)}}}
+function beastHead(p:Pelt,fur:T.Material,muzzleMaterial:T.Material,innerMaterial:T.Material){const skull=new T.Group();
+ const cranium=mesh(new T.SphereGeometry(.3,18,14),fur);cranium.scale.set(.84,.9,1);skull.add(cranium);
+ const cheek=mesh(new T.SphereGeometry(.26,14,10),fur);cheek.scale.set(.88,.68,.9);cheek.position.set(0,-.1,-.12);skull.add(cheek);
+ const snout=mesh(new T.CylinderGeometry(p.snoutWidth*.74,p.snoutWidth,p.snout,12),fur);snout.rotation.x=-Math.PI/2-.22;snout.position.set(0,-.1-p.snout*.12,-.2-p.snout*.46);skull.add(snout);
+ // Pale chin and lip band under a coat-coloured muzzle, not a white sausage.
+ const chin=mesh(new T.SphereGeometry(.5,12,9),muzzleMaterial);chin.scale.set(p.snoutWidth*1.3,p.snoutWidth*.72,p.snout*.92);chin.position.set(0,-.17-p.snout*.2,-.22-p.snout*.5);skull.add(chin);
+ const nose=mesh(new T.SphereGeometry(.5,10,8),lit(p.nose,.32));nose.scale.set(p.snoutWidth*1.25,p.snoutWidth*.8,p.snoutWidth*.5);nose.position.set(0,-.12-p.snout*.26,-.21-p.snout*.96);skull.add(nose);
+ const mouth=mesh(new T.BoxGeometry(p.snoutWidth*.85,.016,p.snout*.42),lit('#2b221c',.85),false);mouth.position.set(0,-.21-p.snout*.24,-.26-p.snout*.58);skull.add(mouth);
+ for(const side of[-1,1]){
+  // eyeSet slides the eyes from forward-facing (hunter) round to the flanks of the skull (prey).
+  const out=new T.Vector3(side*p.eyeSet*.95,.12,-1+p.eyeSet*.82).normalize(),at=new T.Vector3(side*(.13+.13*p.eyeSet),.08,-.25+.15*p.eyeSet);
+  const socket=mesh(new T.SphereGeometry(.072,10,8),lit('#1a1511',.6));socket.position.copy(at);skull.add(socket);
+  const iris=mesh(new T.SphereGeometry(.053,10,8),lit(p.iris,.34));iris.position.copy(at).addScaledVector(out,.028);skull.add(iris);
+  const pupil=mesh(new T.SphereGeometry(.027,8,6),lit('#0a0806',.4));pupil.position.copy(at).addScaledVector(out,.044);skull.add(pupil);
+  const glint=mesh(new T.SphereGeometry(.013,6,5),new T.MeshBasicMaterial({color:'#ffffff'}),false);glint.position.copy(at).addScaledVector(out,.048).add(new T.Vector3(side*.022,.028,0));skull.add(glint);
+  const hinge=new T.Group();hinge.position.set(side*.19,.15,.01);hinge.rotation.z=side*p.earTilt;hinge.rotation.x=-.2;skull.add(hinge);
+  const pinna=p.ear==='pointed'?mesh(new T.ConeGeometry(.5,1,8),fur):mesh(new T.SphereGeometry(.5,12,9),fur);
+  const lining=p.ear==='pointed'?mesh(new T.ConeGeometry(.5,1,7),innerMaterial):mesh(new T.SphereGeometry(.5,10,8),innerMaterial);
+  if(p.ear==='tall'){pinna.scale.set(.17,p.earSize,.08);lining.scale.set(.1,p.earSize*.8,.05)}
+  else if(p.ear==='pointed'){pinna.scale.set(.3,p.earSize,.18);lining.scale.set(.19,p.earSize*.76,.12)}
+  else{pinna.scale.set(p.earSize,p.earSize,p.earSize*.36);lining.scale.set(p.earSize*.66,p.earSize*.66,p.earSize*.3)}
+  pinna.position.y=p.earSize*(p.ear==='pointed'?.5:.4);lining.position.set(0,pinna.position.y*(p.ear==='pointed'?.92:1),-.045);
+  hinge.add(pinna,lining);
+  // A tiger's false eye-spot rides on the back of the ear, so it turns with it.
+  if(p.earBack){const back=mesh(new T.SphereGeometry(.5,10,8),lit(p.earBack));back.scale.set(p.earSize*.9,p.earSize*.9,p.earSize*.2);back.position.set(0,pinna.position.y,.05);hinge.add(back);
+   const spot=mesh(new T.SphereGeometry(.5,10,8),lit('#f7f2e9'));spot.scale.set(p.earSize*.3,p.earSize*.3,p.earSize*.16);spot.position.set(0,pinna.position.y,.07);hinge.add(spot)}
+  if(p.whiskers)for(let w=0;w<3;w++)skull.add(bone(new T.Vector3(side*p.snoutWidth*.72,-.13-p.snout*.24,-.2-p.snout*.72),new T.Vector3(side*(.26+w*.05),-.08-p.snout*.24+w*.04,-.3-p.snout*.78),.007,.003,lit('#efe9dc',.5),4));}
+ return skull}
+function tailChain(parent:T.Object3D,root:T.Vector3,length:number,radius:number,droop:number,material:T.Material|T.Material[],taper=.72,segments=6){let last=root.clone();
+ for(let i=0;i<segments;i++){const t=(i+1)/segments,next=new T.Vector3(root.x,root.y-droop*t*t*length,root.z+t*length);
+  parent.add(bone(last,next,radius*(1-i/segments*taper),radius*(1-t*taper),Array.isArray(material)?material[i%material.length]:material,7));last=next}
+ return last}
+function quadruped(p:Pelt){const g=new T.Group();
+ const hide=new T.MeshStandardMaterial({vertexColors:true,roughness:.93,emissive:selfLit(p.belly,.045)});
+ const fur=lit(p.coat,.93),sock=lit(p.sock??p.coat,.93),footMaterial=lit(p.foot,.66),innerMaterial=lit(p.inner,.9),muzzleMaterial=lit(p.muzzle,.9);
+ g.add(mesh(beastTorso(p),hide));
+ const rootY=-.16*p.depth;
+ const fore:[number,number][]=[[0,0],[.05,-.34],[-.05,-.7],[0,-.94]],hind:[number,number][]=[[0,0],[-.12,-.3],[.14,-.62],[.01,-.9]];
+ for(const side of[-1,1]){
+  limb(g,side*p.girth*.3,rootY,-.5,p.leg,p.legGirth,fore,fur,sock,footMaterial,p.hoofed);
+  limb(g,side*p.girth*.32,rootY,.5,p.leg,p.legGirth*1.1,hind,fur,sock,footMaterial,p.hoofed);
+  const haunch=mesh(new T.SphereGeometry(.5,12,10),fur);haunch.scale.set(p.girth*.38,p.depth*.5,p.depth*.58);haunch.position.set(side*p.girth*.28,rootY+.1,.5);g.add(haunch);
+  const shoulder=mesh(new T.SphereGeometry(.5,12,10),fur);shoulder.scale.set(p.girth*.32,p.depth*.42,p.depth*.48);shoulder.position.set(side*p.girth*.27,rootY+.12,-.5);g.add(shoulder)}
+ const neckBase=new T.Vector3(0,.06*p.depth,-.6),neckTop=new T.Vector3(0,.06*p.depth+p.neck*.86,-.6-p.neck*.5);
+ g.add(bone(neckBase,neckTop,p.girth*.36,p.girth*.26,fur,10));
+ const skull=beastHead(p,fur,muzzleMaterial,innerMaterial);skull.position.copy(neckTop);skull.rotation.x=p.neckTilt;skull.scale.setScalar(p.head);g.add(skull);
+ return{group:g,skull,fur,footMaterial,rump:new T.Vector3(0,.2*p.depth,.86)}}
+// Antlers carried by a mature buck: a beam sweeping up and back with tines off the top.
+function rack(skull:T.Object3D,side:number,material:T.Material){const beam=[new T.Vector3(side*.12,.22,.04),new T.Vector3(side*.26,.46,.02),new T.Vector3(side*.34,.64,-.2),new T.Vector3(side*.3,.72,-.54)];
+ const pedicle=mesh(new T.SphereGeometry(.062,9,7),material);pedicle.position.copy(beam[0]);skull.add(pedicle);
+ for(let i=0;i<3;i++)skull.add(bone(beam[i],beam[i+1],.056-i*.011,.045-i*.011,material,7));
+ // Tines rise off the top of the beam and hook forward, the way a buck's rack does.
+ for(const[at,rise,reach]of[[beam[1],.28,-.1],[beam[2],.32,-.16],[beam[3],.2,-.12]]as[T.Vector3,number,number][]){
+  const tip=at.clone().add(new T.Vector3(side*.03,rise,reach*.35)),curl=tip.clone().add(new T.Vector3(side*.01,rise*.3,reach));
+  skull.add(bone(at,tip,.034,.022,material,6),bone(tip,curl,.022,.009,material,6))}}
+function deer(){const{group,skull,fur}=quadruped({coat:'#a8703c',belly:'#efe6d6',muzzle:'#f2ece0',nose:'#2a2320',iris:'#20180f',foot:'#241c16',inner:'#d9c4ae',
+ girth:.78,depth:.92,head:.8,neck:.62,neckTilt:-.1,leg:.95,legGirth:.06,hoofed:true,ear:'tall',earSize:.54,earTilt:.62,eyeSet:.92,snout:.34,snoutWidth:.115});
+ const antlerMaterial=lit('#9c8258',.7);for(const side of[-1,1])rack(skull,side,antlerMaterial);
+ // The name is the field mark: brown above, a white fan underneath.
+ const swish=new T.Group();swish.position.set(0,.26,.86);swish.rotation.x=-.45;group.add(swish);
+ const flag=mesh(new T.SphereGeometry(.5,14,10),fur);flag.scale.set(.2,.42,.1);flag.position.y=-.16;swish.add(flag);
+ const underside=mesh(new T.SphereGeometry(.5,14,10),lit('#f7f3ea'));underside.scale.set(.19,.4,.09);underside.position.set(0,-.17,.035);swish.add(underside);
+ wingBeats.push({pivot:swish,axis:'y',rest:0,amp:.22,speed:1.1,phase:random()*Math.PI*2});
+ group.scale.setScalar(1.12);return group}
+function fox(){const{group,skull,fur}=quadruped({coat:'#c9622c',belly:'#f4efe6',muzzle:'#f3ede3',nose:'#231b17',iris:'#c08a2e',foot:'#241b15',inner:'#e8c9b4',sock:'#2e221b',
+ girth:.66,depth:.74,head:1.02,neck:.28,neckTilt:-.04,leg:.68,legGirth:.05,hoofed:false,ear:'pointed',earSize:.4,earTilt:.28,eyeSet:.5,snout:.4,snoutWidth:.085,whiskers:true});
+ const cheek=mesh(new T.SphereGeometry(.5,12,9),lit('#f4efe6'));cheek.scale.set(.34,.2,.3);cheek.position.set(0,-.16,-.3);skull.add(cheek);
+ const brush=new T.Group();group.add(brush);
+ const tip=tailChain(brush,new T.Vector3(0,.06,.84),1,.26,.5,fur,.3,6);
+ const white=mesh(new T.SphereGeometry(.5,12,9),lit('#f7f2e8'));white.scale.setScalar(.34);white.position.copy(tip);brush.add(white);
+ wingBeats.push({pivot:brush,axis:'y',rest:0,amp:.13,speed:.8,phase:random()*Math.PI*2});
+ group.scale.setScalar(.72);return group}
+function rabbit(){const{group,skull}=quadruped({coat:'#9a8a73',belly:'#f2ece0',muzzle:'#d8cdb9',nose:'#c98f90',iris:'#241a14',foot:'#8a7c68',inner:'#e0b5ae',
+ girth:.95,depth:1,head:.92,neck:.08,neckTilt:.34,leg:.34,legGirth:.05,hoofed:false,ear:'tall',earSize:.68,earTilt:.2,eyeSet:1,snout:.15,snoutWidth:.085,whiskers:true});
+ const nape=mesh(new T.SphereGeometry(.5,12,9),lit('#a8663f'));nape.scale.set(.3,.2,.26);nape.position.set(0,.16,.1);skull.add(nape);
+ const puff=mesh(new T.SphereGeometry(.19,12,10),lit('#f8f4ea'));puff.position.set(0,.22,.9);group.add(puff);
+ group.scale.setScalar(.62);return group}
+// ── River life ───────────────────────────────────────────────────────────────
+// One rounded membrane, scaled and turned into every fin below.
+const finGeometry=(()=>{const s=new T.Shape();s.moveTo(-.5,0);s.bezierCurveTo(-.54,.46,-.42,.9,-.16,1);s.quadraticCurveTo(0,1.05,.16,1);s.bezierCurveTo(.42,.9,.54,.46,.5,0);s.closePath();return new T.ShapeGeometry(s,12)})();
+function fin(material:T.Material,width:number,reach:number,rotation:[number,number,number,T.EulerOrder],position:[number,number,number]){const f=new T.Mesh(finGeometry,material);f.scale.set(width,reach,1);f.rotation.set(...rotation);f.position.set(...position);f.receiveShadow=true;return f}
+function painted(size:number,draw:(context:CanvasRenderingContext2D)=>void){const canvas=document.createElement('canvas');canvas.width=canvas.height=size;draw(canvas.getContext('2d')!);const texture=new T.CanvasTexture(canvas);texture.colorSpace=T.SRGBColorSpace;return texture}
+// Brook trout. A lathe's u wraps the body (0 = belly, .5 = spine) and v runs nose to
+// tail, so the whole pattern can be painted in one canvas.
+function fish(){const g=new T.Group();
+ const hide=painted(256,c=>{const grad=c.createLinearGradient(0,0,256,0);
+  for(const[stop,color]of[[0,'#cf5f2b'],[.13,'#dd9c58'],[.28,'#8f8a52'],[.5,'#3a4f2f'],[.72,'#8f8a52'],[.87,'#dd9c58'],[1,'#cf5f2b']]as[number,string][])grad.addColorStop(stop,color);
+  c.fillStyle=grad;c.fillRect(0,0,256,256);
+  c.strokeStyle='#d8debb';c.lineWidth=3.4;c.lineCap='round';
+  for(let i=0;i<30;i++){let x=112+range(-16,16);const y=range(0,256);c.beginPath();c.moveTo(x,y);for(let s=1;s<6;s++){x+=range(-13,13);c.lineTo(x,y+s*4.5)}c.stroke()}
+  // Red spots ringed in blue: the mark no other trout in this river carries.
+  for(let i=0;i<34;i++){const x=(random()>.5?58:198)+range(-24,24),y=range(6,250);
+   c.fillStyle='#86adcf';c.beginPath();c.arc(x,y,5.4,0,6.29);c.fill();
+   c.fillStyle='#cf4529';c.beginPath();c.arc(x,y,2.5,0,6.29);c.fill()}});
+ const profile:[number,number][]=[[.002,-1.02],[.1,-.94],[.19,-.76],[.26,-.48],[.29,-.12],[.275,.22],[.22,.52],[.14,.76],[.08,.9],[.055,1]];
+ const body=new T.LatheGeometry(profile.map(([r,y])=>new T.Vector2(r,y)),26);body.rotateX(Math.PI/2);body.scale(.52,1,1);body.computeVertexNormals();
+ g.add(mesh(body,new T.MeshStandardMaterial({map:hide,roughness:.3,metalness:.18,emissive:selfLit('#6b6a46',.18)})));
+ const finMaterial=new T.MeshStandardMaterial({color:'#c2662f',roughness:.5,emissive:selfLit('#c2662f',.2),side:T.DoubleSide});
+ const edged=new T.MeshStandardMaterial({color:'#f2e7d4',roughness:.5,emissive:selfLit('#f2e7d4',.2),side:T.DoubleSide});
+ const sway=new T.Group();sway.position.z=.88;g.add(sway);
+ // Squaretail: the blunt caudal fin that gives the brook trout its other name.
+ sway.add(fin(finMaterial,.46,.3,[Math.PI/2,-Math.PI/2,0,'XYZ'],[0,0,.04]));
+ wingBeats.push({pivot:sway,axis:'y',rest:0,amp:.3,speed:2.6,phase:random()*Math.PI*2});
+ g.add(fin(finMaterial,.32,.19,[0,-Math.PI/2,0,'XYZ'],[0,.24,-.04]));
+ const adipose=mesh(new T.SphereGeometry(.5,8,6),finMaterial);adipose.scale.set(.04,.1,.16);adipose.position.set(0,.22,.6);g.add(adipose);
+ g.add(fin(finMaterial,.2,.15,[Math.PI,-Math.PI/2,0,'XYZ'],[0,-.2,.46]));
+ for(const side of[-1,1]){
+  g.add(fin(edged,.22,.26,[Math.PI/2,side*1.15,0,'YXZ'],[side*.13,-.14,-.46]));
+  g.add(fin(edged,.17,.19,[Math.PI/2,side*1,0,'YXZ'],[side*.1,-.2,.14]))}
+ const gill=mesh(new T.TorusGeometry(.2,.014,5,14),lit('#5c5236',.5),false);gill.scale.set(1,1.1,1);gill.position.set(0,-.02,-.62);g.add(gill);
+ for(const side of[-1,1]){const eye=mesh(new T.SphereGeometry(.072,10,8),lit('#e3d49a',.3));eye.position.set(side*.14,.1,-.8);g.add(eye);
+  const pupil=mesh(new T.SphereGeometry(.04,8,6),lit('#12100c',.4));pupil.position.set(side*.16,.1,-.83);g.add(pupil)}
+ return g}
+function turtle(){const g=new T.Group();
+ const shellMaterial=lit('#4e6b3c',.85),scuteMaterial=lit('#628550',.8),skinMaterial=lit('#6f8f5e',.88);
+ const carapace=mesh(new T.SphereGeometry(.5,22,16),shellMaterial);carapace.scale.set(1.5,.82,1.9);carapace.position.y=.1;g.add(carapace);
+ // Vertebral scutes down the spine with costal scutes either side, as a real shell is plated.
+ for(let i=0;i<5;i++){const t=(i/4-.5)*1.34,vert=mesh(new T.CylinderGeometry(.15,.17,.05,6),scuteMaterial);vert.position.set(0,.5-t*t*.3,t);vert.rotation.y=Math.PI/6;g.add(vert);
+  for(const side of[-1,1]){if(i>3)continue;const costal=mesh(new T.CylinderGeometry(.14,.16,.05,6),scuteMaterial);costal.position.set(side*(.42-t*t*.12),.36-t*t*.34,t+.17);costal.rotation.set(0,Math.PI/6,side*.62);g.add(costal)}}
+ const rim=mesh(new T.TorusGeometry(.78,.06,7,26),shellMaterial);rim.rotation.x=Math.PI/2;rim.scale.set(.94,1.2,1);rim.position.y=.02;g.add(rim);
+ const plastron=mesh(new T.SphereGeometry(.5,18,12),lit('#d8c98c',.86));plastron.scale.set(1.28,.3,1.68);plastron.position.y=-.14;g.add(plastron);
+ const neck=bone(new T.Vector3(0,.04,-.7),new T.Vector3(0,.12,-1.02),.11,.09,skinMaterial);g.add(neck);
+ const head=mesh(new T.SphereGeometry(.5,14,11),skinMaterial);head.scale.set(.3,.26,.4);head.position.set(0,.13,-1.16);g.add(head);
+ const beak=mesh(new T.SphereGeometry(.5,10,8),lit('#c6b478',.7));beak.scale.set(.15,.1,.1);beak.position.set(0,.09,-1.33);g.add(beak);
+ for(const side of[-1,1]){const eye=mesh(new T.SphereGeometry(.035,8,6),lit('#1a1611',.4));eye.position.set(side*.1,.2,-1.26);g.add(eye);
+  // Yellow head and neck striping, the giveaway of a basking river turtle.
+  for(let s=0;s<3;s++){const stripe=mesh(new T.SphereGeometry(.5,8,6),lit('#e2c765',.8));stripe.scale.set(.03,.03,.34);stripe.position.set(side*(.06+s*.05),.19-s*.08,-1.1);g.add(stripe)}}
+ for(const side of[-1,1])for(const z of[-.52,.6]){const limb=bone(new T.Vector3(side*.5,-.02,z),new T.Vector3(side*.78,-.2,z+(z<0?-.16:.14)),.1,.08,skinMaterial);g.add(limb);
+  const webbed=mesh(new T.SphereGeometry(.5,10,8),skinMaterial);webbed.scale.set(.3,.08,.3);webbed.position.set(side*.88,-.23,z+(z<0?-.22:.2));g.add(webbed);
+  for(let claw=0;claw<3;claw++){const nail=mesh(new T.ConeGeometry(.018,.07,5),lit('#d9cfae',.6),false);nail.rotation.x=z<0?-Math.PI/2:Math.PI/2;nail.position.set(side*(.86+claw*.04),-.23,z+(z<0?-.38:.36));g.add(nail)}}
+ const tail=mesh(new T.ConeGeometry(.07,.3,7),skinMaterial);tail.rotation.x=-Math.PI/2;tail.position.set(0,-.02,.94);g.add(tail);
+ return g}
+// Ocellate river stingray: a round disc, eyes and spiracles on top, ringed spots,
+// and a whip tail. The disc margins ripple, which is how a ray actually swims.
+function ray(){const g=new T.Group();
+ const skinMaterial=lit('#375441',.9),paleMaterial=lit('#b9ae90',.9);
+ const core=mesh(new T.SphereGeometry(.5,20,14),skinMaterial);core.scale.set(1.1,.34,1.7);g.add(core);
+ for(const side of[-1,1]){const flap=new T.Group();g.add(flap);
+  const disc=new T.Shape();disc.moveTo(0,-.8);disc.bezierCurveTo(side*.8,-.75,side*1.25,-.2,side*1.15,.35);disc.bezierCurveTo(side*1,.8,side*.4,.95,0,.9);disc.closePath();
+  const wing=new T.ExtrudeGeometry(disc,{depth:.1,bevelEnabled:false,curveSegments:14});wing.rotateX(Math.PI/2);wing.translate(0,.05,0);
+  countershade(wing,'#b9ae90','#2f4a38',-.02,.03);
+  const plate=mesh(wing,new T.MeshStandardMaterial({vertexColors:true,roughness:.9,emissive:selfLit('#46573f',.12)}));flap.add(plate);
+  for(let i=0;i<5;i++){const at=new T.Vector3(side*range(.45,1),.048,range(-.6,.7));
+   const ring=mesh(new T.TorusGeometry(.12,.024,6,16),lit('#c4b070',.8),false);ring.rotation.x=Math.PI/2;ring.scale.y=.35;ring.position.copy(at);flap.add(ring);
+   const pip=mesh(new T.SphereGeometry(.5,8,6),lit('#22362a',.8));pip.scale.set(.13,.02,.13);pip.position.copy(at);flap.add(pip)}
+  wingBeats.push({pivot:flap,rest:0,amp:side*.22,speed:1.5,phase:random()*Math.PI*2});
+  const eye=mesh(new T.SphereGeometry(.055,8,6),lit('#2a2118',.4));eye.position.set(side*.16,.17,-.5);g.add(eye);
+  const spiracle=mesh(new T.SphereGeometry(.5,8,6),lit('#35503c',.8));spiracle.scale.set(.11,.04,.13);spiracle.position.set(side*.18,.16,-.33);g.add(spiracle);
+  for(let s=0;s<4;s++){const slit=mesh(new T.BoxGeometry(.07,.01,.022),paleMaterial,false);slit.position.set(side*(.13+s*.06),-.15,-.14+s*.05);g.add(slit)}}
+ const mouth=mesh(new T.BoxGeometry(.28,.02,.05),paleMaterial,false);mouth.position.set(0,-.15,-.42);g.add(mouth);
+ const whip=new T.Group();g.add(whip);
+ tailChain(whip,new T.Vector3(0,.05,.8),1.9,.075,.05,skinMaterial,.9,7);
+ const barb=mesh(new T.ConeGeometry(.045,.28,6),lit('#d9cfae',.55));barb.rotation.x=-Math.PI/2;barb.position.set(0,.04,1.5);whip.add(barb);
+ wingBeats.push({pivot:whip,axis:'y',rest:0,amp:.16,speed:1.1,phase:random()*Math.PI*2});
+ return g}
 // Birds are built from one shared vane: a tapered feather rooted at the origin,
 // pointing +Y, so a whole wing costs a single geometry and only scale/rotation.
 const featherGeometry=(()=>{const s=new T.Shape();s.moveTo(0,0);s.bezierCurveTo(.15,.08,.22,.45,.13,.9);s.quadraticCurveTo(.06,1.02,-.01,1);s.bezierCurveTo(-.11,.58,-.13,.2,0,0);return new T.ShapeGeometry(s,12)})();
-// The scene's hemisphere light bounces dark green off the ground, which turns pale
-// plumage green from below. A trace of self-colour keeps white feathers white.
-const selfLit=(color:T.ColorRepresentation,amount=.17)=>new T.Color(color).multiplyScalar(amount);
-const lit=(color:T.ColorRepresentation,roughness=.8)=>new T.MeshStandardMaterial({color,roughness,emissive:selfLit(color)});
 const plume=(color:T.ColorRepresentation,roughness=.78,metalness=0)=>new T.MeshStandardMaterial({color,roughness,metalness,emissive:selfLit(color),side:T.DoubleSide});
 // Returns a placed copy rather than a mesh: a wing is hundreds of vanes, so they are
 // merged per material into one draw call instead of one each.
 // sweep fans the vane outboard across the wing, lift curls its tip upward.
 function feather(x:number,y:number,z:number,length:number,width:number,sweep:number,lift=0){const placement=new T.Matrix4().compose(new T.Vector3(x,y,z),new T.Quaternion().setFromEuler(new T.Euler(Math.PI/2-lift,sweep,0,'YXZ')),new T.Vector3(width,length,1));return featherGeometry.clone().applyMatrix4(placement)}
 function plumeMesh(vanes:T.BufferGeometry[],material:T.Material){const merged=mesh(mergeGeometries(vanes),material,false);vanes.forEach(v=>v.dispose());return merged}
-// Dark above, pale below: the countershading every wild bird wears.
-function countershade(geometry:T.BufferGeometry,belly:string,back:string,low:number,high:number){const position=geometry.attributes.position as T.BufferAttribute;const colors=new Float32Array(position.count*3);const under=new T.Color(belly),over=new T.Color(back),c=new T.Color();for(let i=0;i<position.count;i++){c.copy(under).lerp(over,T.MathUtils.smoothstep(position.getY(i),low,high));colors[i*3]=c.r;colors[i*3+1]=c.g;colors[i*3+2]=c.b}geometry.setAttribute('color',new T.BufferAttribute(colors,3));return geometry}
 function birdTorso(belly:string,back:string,girth:number){const profile:[number,number][]=[[.002,-.74],[.13,-.7],[.23,-.6],[.3,-.44],[.345,-.2],[.355,.05],[.33,.3],[.275,.52],[.19,.72],[.095,.87],[.002,.96]];const geometry=new T.LatheGeometry(profile.map(([r,y])=>new T.Vector2(r,y)),24);geometry.rotateX(Math.PI/2);geometry.scale(.88*girth,girth,1);geometry.computeVertexNormals();return countershade(geometry,belly,back,-.06*girth,.15*girth)}
 // The inner wing is solid flesh and coverts; only the trailing half is loose feathers.
 // Without this slab the wing disappears whenever it is seen edge-on.
@@ -208,33 +399,90 @@ function butterfly(){const g=new T.Group(),phase=random()*Math.PI*2;const body=c
   const spot=sphere(.07,'#2c211b',8,6);spot.scale.set(.9,.3,.6);spot.position.set(side*.62,.02,-.24);hinge.add(spot);
   wingBeats.push({pivot:hinge,rest:0,amp:side*.8,speed:9,phase})}
  for(const side of[-1,1]){const antenna=cylinder(.008,.008,.3,'#2c211b',4);antenna.position.set(side*.05,.12,-.32);antenna.rotation.x=-.5;antenna.rotation.z=side*.3;g.add(antenna)}return g}
-function tiger(){const g=animalBody('#d97827','#26180f');g.scale.setScalar(1.18);for(const x of[-.5,.5])for(const z of[-.3,.35]){const leg=cylinder(.1,.13,1.25,'#d97827',8);leg.position.set(x,-.78,z);g.add(leg);const paw=sphere(.12,'#f4ede2',7,6);paw.position.set(x,-1.42,z);g.add(paw)}for(let i=-2;i<=2;i++){const stripe=box(.07,.48,.72,'#2b2019');stripe.position.set(i*.25,.28,.05);stripe.rotation.z=i*.1;g.add(stripe)}for(const x of[-.27,.27]){const ear=mesh(new T.ConeGeometry(.2,.45,7),mat('#2b2019'));ear.position.set(x,.88,-.82);g.add(ear)}return g}
-function frog(){const g=new T.Group();const body=sphere(.42,'#5d9b48',16,12);body.scale.set(1,.65,1.15);g.add(body);for(const x of[-.28,.28]){const eye=sphere(.14,'#9bc66c',10,8);eye.position.set(x,.34,-.25);g.add(eye);const pupil=sphere(.05,'#172418',6,5);pupil.position.set(x,.38,-.37);g.add(pupil)}for(const x of[-.5,.5]){const leg=box(.55,.12,.16,'#4f873e');leg.position.set(x,-.18,.22);g.add(leg);for(let t=0;t<3;t++){const toe=box(.16,.06,.08,'#4f873e');toe.position.set(x+(x<0?-.28:.28),-.2,.28+t*.13-.13);g.add(toe)}}for(const x of[-.32,.32]){const arm=cylinder(.06,.07,.3,'#5d9b48',6);arm.rotation.z=Math.PI/2;arm.position.set(x,.02,-.28);g.add(arm)}return g}
+function tiger(){const{group,skull,fur}=quadruped({coat:'#dd8228',belly:'#f7f2e9',muzzle:'#f7f2e9',nose:'#a05e56',iris:'#c9a13a',foot:'#d98f3c',inner:'#f0d4c8',sock:'#dd8228',stripe:'#241c16',stripes:26,
+ girth:1.05,depth:1,head:1.24,neck:.3,neckTilt:.04,leg:.82,legGirth:.095,hoofed:false,ear:'round',earSize:.21,earTilt:.42,earBack:'#241c16',eyeSet:.26,snout:.24,snoutWidth:.16,whiskers:true});
+ // Pale brow flashes above the eyes, the other mark that reads at a distance.
+ for(const side of[-1,1]){const brow=mesh(new T.SphereGeometry(.5,10,8),lit('#f2ebe0'));brow.scale.set(.15,.07,.1);brow.position.set(side*.16,.16,-.22);skull.add(brow)}
+ const swish=new T.Group();group.add(swish);
+ const dark=lit('#241c16',.93);
+ const tip=tailChain(swish,new T.Vector3(0,.22,.86),1.5,.13,.28,[fur,dark],.4,8);
+ const black=mesh(new T.SphereGeometry(.5,10,8),dark);black.scale.setScalar(.15);black.position.copy(tip);swish.add(black);
+ wingBeats.push({pivot:swish,axis:'y',rest:0,amp:.2,speed:.7,phase:random()*Math.PI*2});
+ group.scale.setScalar(1.05);return group}
+function frog(){const g=new T.Group();
+ const skinMaterial=lit('#5d9b48',.86),limbMaterial=lit('#558f42',.86),paleMaterial=lit('#e6dc9a',.85);
+ const hide=new T.SphereGeometry(.5,20,14);hide.scale(.86,.6,1.1);countershade(hide,'#dcd79a','#5d9b48',-.16,.02);
+ g.add(mesh(hide,new T.MeshStandardMaterial({vertexColors:true,roughness:.84,emissive:selfLit('#5d9b48',.12)})));
+ const snout=mesh(new T.SphereGeometry(.5,14,10),skinMaterial);snout.scale.set(.52,.3,.34);snout.position.set(0,0,-.5);g.add(snout);
+ const lip=mesh(new T.SphereGeometry(.5,14,8),lit('#3a4430',.85));lip.scale.set(.56,.03,.34);lip.position.set(0,-.11,-.44);g.add(lip);
+ const throat=mesh(new T.SphereGeometry(.5,12,9),paleMaterial);throat.scale.set(.42,.16,.34);throat.position.set(0,-.17,-.4);g.add(throat);
+ for(let i=0;i<7;i++){const blotch=mesh(new T.SphereGeometry(.5,8,6),lit('#3f6b33',.88));blotch.scale.set(range(.1,.2),.04,range(.1,.22));blotch.position.set(range(-.3,.3),.28-range(0,.04),range(-.3,.5));g.add(blotch)}
+ for(const side of[-1,1]){
+  // A green frog's dorsolateral ridges are what separate it from a bullfrog.
+  const ridge=mesh(new T.SphereGeometry(.5,10,8),lit('#7cb45a',.84));ridge.scale.set(.06,.06,.95);ridge.position.set(side*.33,.2,.12);g.add(ridge);
+  const socket=mesh(new T.SphereGeometry(.5,12,9),skinMaterial);socket.scale.setScalar(.26);socket.position.set(side*.23,.24,-.28);g.add(socket);
+  const iris=mesh(new T.SphereGeometry(.5,12,9),lit('#d6a636',.3));iris.scale.setScalar(.2);iris.position.set(side*.24,.27,-.32);g.add(iris);
+  const pupil=mesh(new T.SphereGeometry(.5,10,8),lit('#100f0a',.4));pupil.scale.set(.13,.05,.05);pupil.position.set(side*.245,.272,-.44);g.add(pupil);
+  // Tympanum: the eardrum disc behind the eye, bigger than the eye on a male.
+  const drum=mesh(new T.SphereGeometry(.5,12,9),lit('#4c7d3c',.8));drum.scale.set(.06,.28,.28);drum.position.set(side*.37,.16,-.16);g.add(drum);
+  const boss=mesh(new T.SphereGeometry(.5,8,6),lit('#8fb56a',.8));boss.scale.set(.025,.045,.045);boss.position.set(side*.4,.16,-.16);g.add(boss);
+  // Hind legs folded alongside the body, front legs propping up the chest.
+  const hip=new T.Vector3(side*.3,-.12,.3),knee=new T.Vector3(side*.46,.04,-.1),heel=new T.Vector3(side*.42,-.22,.42),toeRoot=new T.Vector3(side*.34,-.3,.02);
+  g.add(bone(hip,knee,.14,.11,limbMaterial,7),bone(knee,heel,.11,.08,limbMaterial,7),bone(heel,toeRoot,.08,.06,limbMaterial,7));
+  const webbed=mesh(new T.SphereGeometry(.5,10,8),limbMaterial);webbed.scale.set(.2,.04,.3);webbed.position.set(side*.32,-.31,-.12);g.add(webbed);
+  for(let toe=0;toe<4;toe++){const digit=mesh(new T.SphereGeometry(.5,7,6),limbMaterial);digit.scale.set(.04,.03,.24);digit.position.set(side*(.24+toe*.06),-.31,-.22);g.add(digit)}
+  const shoulder=new T.Vector3(side*.24,-.1,-.36),elbow=new T.Vector3(side*.3,-.26,-.44),wrist=new T.Vector3(side*.26,-.36,-.5);
+  g.add(bone(shoulder,elbow,.07,.06,limbMaterial,6),bone(elbow,wrist,.06,.05,limbMaterial,6));
+  for(let toe=0;toe<3;toe++){const digit=mesh(new T.SphereGeometry(.5,6,5),limbMaterial);digit.scale.set(.035,.03,.14);digit.position.set(side*(.2+toe*.05),-.37,-.58);g.add(digit)}}
+ g.scale.setScalar(.72);return g}
 // Barred owl: no ear tufts, dark eyes in a ringed facial disc, broad rounded wings.
 function owl(){const g=bird({mantle:'#6f5840',belly:'#e9e0cf',throat:'#ded3be',hood:'#766046',flight:'#8a7154',underwing:'#ddd2bb',tail:'#7d6549',beak:'#e6c25a',iris:'#241a12',leg:'#cdbfa6',face:'disc',disc:'#d9ccb5',discRim:'#5c4730',scale:.85,girth:1.16,head:1.38,span:1.7,chord:.82,primaries:9,secondaries:9,rectrices:12,tailLength:.82,fork:0,spread:.4,dihedral:.06,flapAmp:.38,flapSpeed:3.1});
  for(let i=0;i<3;i++){const bar=sphere(.2,'#6d5236',10,8);bar.scale.set(1.15,.17,.3);bar.position.set(0,-.245-i*.04,-.52+i*.17);g.add(bar)}
  for(let i=0;i<4;i++){const streak=sphere(.16,'#6d5236',8,7);streak.scale.set(.2,.22,1.5);streak.position.set((i-1.5)*.13,-.32,.12);g.add(streak)}return g}
-function otter(){const g=animalBody('#76513b','#241a14');g.scale.set(.9,.75,1.15);const tail=mesh(new T.ConeGeometry(.22,1.7,8),mat('#654331'));tail.rotation.x=-Math.PI/2;tail.position.set(0,-.05,1.3);g.add(tail);for(const x of[-.3,.3])for(const z of[-.2,.25]){const leg=cylinder(.07,.08,.5,tint('#5c4230',.08),7);leg.position.set(x,-.55,z);g.add(leg)}return g}
+function otter(){const{group,fur,footMaterial}=quadruped({coat:'#6b4a35',belly:'#c9b59b',muzzle:'#d9c8b0',nose:'#2b211b',iris:'#2a1f17',foot:'#5a3f2d',inner:'#4a3527',
+ girth:.94,depth:.8,head:.88,neck:.16,neckTilt:0,leg:.3,legGirth:.055,hoofed:false,ear:'round',earSize:.13,earTilt:.2,eyeSet:.42,snout:.2,snoutWidth:.135,whiskers:true});
+ // Webbing between the toes and a thick rudder tail: an otter is built for the river.
+ for(const side of[-1,1])for(const z of[-.5,.5]){const web=mesh(new T.SphereGeometry(.5,10,8),footMaterial);web.scale.set(.19,.04,.22);web.position.set(side*.29,-.42,z+.07);group.add(web)}
+ const rudder=new T.Group();group.add(rudder);
+ tailChain(rudder,new T.Vector3(0,.04,.84),1.35,.19,.12,fur,.82,7);
+ wingBeats.push({pivot:rudder,axis:'y',rest:0,amp:.26,speed:1.4,phase:random()*Math.PI*2});
+ group.scale.setScalar(.9);return group}
 
 type FieldSpec=Omit<FieldObject,'object'|'home'|'phase'|'kind'>&{kind?:'animal'|'plant';position:[number,number,number];make:()=>T.Group};
 const creatureSpecs:FieldSpec[]=[
- {name:'White-tailed Deer',icon:'🦌',biome:'woodland',position:[-5,1,1],make:deer,fact:'I browse on leaves and return nutrients to the soil. My alert ears also warn nearby animals when danger enters the forest.',question:'What role does the deer play here?',choices:['It recycles nutrients','It pollinates the river'],answer:0},
- {name:'Red Fox',icon:'🦊',biome:'woodland',position:[10,.9,-5],make:fox,fact:'I keep small-animal populations in balance. A healthy predator can be a sign that many layers of this food web are working.',question:'Why are predators important?',choices:['They balance populations','They stop trees growing'],answer:0},
- {name:'Eastern Cottontail',icon:'🐇',biome:'woodland',position:[-11,.7,-8],make:rabbit,fact:'The edge between meadow and forest gives me both food and cover. Connected habitats let me move without crossing dangerous open ground.',question:'What does the rabbit need most?',choices:['Only open pavement','Connected habitat'],answer:1},
- {name:'Brook Trout',icon:'🐟',biome:'underwater',position:[2,-5,-3],make:()=>fish('#d68e50'),fact:'I need cold, clean, oxygen-rich water. Shade from streamside trees keeps this river cool enough for me.',question:'How do trees help this fish?',choices:['They warm the river','Their shade cools it'],answer:1},
+ {name:'White-tailed Deer',icon:'🦌',biome:'woodland',position:grounded(DEER_X,DEER_Z,.96),make:deer,fact:'I browse on leaves and return nutrients to the soil. My alert ears also warn nearby animals when danger enters the forest.',question:'What role does the deer play here?',choices:['It recycles nutrients','It pollinates the river'],answer:0},
+ {name:'Red Fox',icon:'🦊',biome:'woodland',position:grounded(10,-5,.5),make:fox,fact:'I keep small-animal populations in balance. A healthy predator can be a sign that many layers of this food web are working.',question:'Why are predators important?',choices:['They balance populations','They stop trees growing'],answer:0},
+ {name:'Eastern Cottontail',icon:'🐇',biome:'woodland',position:grounded(-17,12,.3),make:rabbit,fact:'The edge between meadow and forest gives me both food and cover. Connected habitats let me move without crossing dangerous open ground.',question:'What does the rabbit need most?',choices:['Only open pavement','Connected habitat'],answer:1},
+ {name:'Brook Trout',icon:'🐟',biome:'underwater',position:[2,-5,-3],make:fish,fact:'I need cold, clean, oxygen-rich water. Shade from streamside trees keeps this river cool enough for me.',question:'How do trees help this fish?',choices:['They warm the river','Their shade cools it'],answer:1},
  {name:'River Turtle',icon:'🐢',biome:'underwater',position:[-2,-8,4],make:turtle,fact:'I travel between water and sunny banks. Logs and stones above the water help me warm my body after a cold swim.',question:'Why does the turtle visit the bank?',choices:['To warm its body','To grow feathers'],answer:0},
  {name:'Freshwater Ray',icon:'RAY',biome:'underwater',position:[6,-7,-9],make:ray,fact:'My flattened body lets me glide close to the river floor, where I find small creatures hidden in the sediment.',question:'Where does the ray search for food?',choices:['Near the river floor','Inside the clouds'],answer:0},
  {name:'Bald Eagle',icon:'🦅',biome:'sky',position:[-3,16,-4],make:eagle,fact:'Rising warm air lets me circle without constant flapping. From high above, I can read the river like a map.',question:'What helps the eagle stay aloft?',choices:['Warm rising air','Cold sinking stones'],answer:0},
  {name:'Tree Swallow',icon:'🐦',biome:'sky',position:[9,12,2],make:swallow,fact:'I catch insects in flight. Wetlands below produce abundant insect life, linking the water directly to the sky.',question:'What connects this bird to the river?',choices:['Aquatic insect life','Underwater acorns'],answer:0},
  {name:'Monarch Butterfly',icon:'🦋',biome:'sky',position:[-10,9,-7],make:butterfly,fact:'I navigate across a continent, but I still depend on small patches of milkweed and nectar flowers along the way.',question:'What makes migration possible?',choices:['Connected flower patches','One enormous tree'],answer:0},
- {name:'Bengal Tiger',icon:'🐅',biome:'woodland',position:[13,1.2,8],make:tiger,fact:'As an apex predator, I influence where prey move and feed. Protecting my habitat also protects countless smaller species that share the same forest.',question:'Why can protecting a tiger help an ecosystem?',choices:['Its habitat shelters many species','Its stripes make trees grow'],answer:0},
- {name:'Green Frog',icon:'🐸',biome:'woodland',position:[5,.45,-1],make:frog,fact:'My permeable skin responds quickly to changes in water quality, so scientists can use amphibians as indicators of ecosystem health.',question:'What can frogs help reveal?',choices:['Water and habitat health','The age of the clouds'],answer:0},
+ {name:'Bengal Tiger',icon:'🐅',biome:'woodland',position:grounded(17,8,1.2),make:tiger,fact:'As an apex predator, I influence where prey move and feed. Protecting my habitat also protects countless smaller species that share the same forest.',question:'Why can protecting a tiger help an ecosystem?',choices:['Its habitat shelters many species','Its stripes make trees grow'],answer:0},
+ {name:'Green Frog',icon:'🐸',biome:'woodland',position:grounded(5,-1,.45),make:frog,fact:'My permeable skin responds quickly to changes in water quality, so scientists can use amphibians as indicators of ecosystem health.',question:'What can frogs help reveal?',choices:['Water and habitat health','The age of the clouds'],answer:0},
  {name:'Barred Owl',icon:'🦉',biome:'sky',position:[-14,8,5],make:owl,fact:'My soft-edged feathers reduce flight noise, helping me hear and approach prey after sunset.',question:'What is special about the owl’s feathers?',choices:['They make flight quieter','They glow underwater'],answer:0},
  {name:'River Otter',icon:'🦦',biome:'underwater',position:[-2,-3,-8],make:otter,fact:'I need clean waterways with healthy fish populations and sheltered banks. My presence can signal a connected river ecosystem.',question:'What does an otter need?',choices:['Clean, connected waterways','Dry desert dunes'],answer:0},
  {name:'Eastern Hemlock',icon:'🌲',kind:'plant',biome:'woodland',position:rooted(-8,7,1.35),make:()=>tree(0,0,1.35),fact:'My evergreen canopy shades streams throughout the year, helping cold-water species while my branches shelter birds in winter.',question:'How does this tree help the stream?',choices:['It provides cooling shade','It removes all oxygen'],answer:0},
  {name:'Young Pine',icon:'🌱',kind:'plant',biome:'woodland',position:rooted(16,-10,.9),make:()=>tree(0,0,.9),fact:'As I grow, my roots hold soil in place and my needles add organic matter that feeds the forest floor.',question:'What do tree roots help prevent?',choices:['Soil erosion','Moonlight'],answer:0},
 ];
-const creatures:FieldObject[]=creatureSpecs.map((spec,index)=>{const object=spec.make();object.position.fromArray(spec.position);object.traverse(child=>{child.userData.creature=index});scene.add(object);return{...spec,kind:spec.kind??'animal',object,home:object.position.clone(),phase:random()*Math.PI*2}});
+// A jointed animal is assembled from dozens of small parts, which is dozens of draw
+// calls twice over once shadows are on. Everything that never moves relative to its
+// parent is merged per material; the pivots that animate are left alone.
+function bake<Node extends T.Object3D>(root:Node){const pivots=new Set(wingBeats.map(w=>w.pivot));
+ const holdsPivot=(node:T.Object3D)=>{let found=false;node.traverse(c=>{if(pivots.has(c))found=true});return found};
+ const units:T.Object3D[]=[root];root.traverse(node=>{if(pivots.has(node))units.push(node)});
+ for(const unit of units){unit.updateMatrixWorld(true);
+  const inverse=new T.Matrix4().copy(unit.matrixWorld).invert(),buckets=new Map<T.Material,T.BufferGeometry[]>();
+  const harvest=(node:T.Object3D)=>{for(const child of node.children){if(holdsPivot(child))continue;
+   const m=child as T.Mesh;
+   if(m.isMesh){const list=buckets.get(m.material as T.Material)??[];list.push(m.geometry.clone().applyMatrix4(new T.Matrix4().multiplyMatrices(inverse,m.matrixWorld)));buckets.set(m.material as T.Material,list)}
+   harvest(child)}};
+  harvest(unit);
+  unit.children.filter(child=>!holdsPivot(child)).forEach(child=>unit.remove(child));
+  for(const[material,list]of buckets){unit.add(mesh(mergeGeometries(list),material));list.forEach(g=>g.dispose())}}
+ return root}
+const creatures:FieldObject[]=creatureSpecs.map((spec,index)=>{const object=bake(spec.make());object.position.fromArray(spec.position);const turn = spec.name==='Red Fox' ? Math.PI/2 : spec.name==='White-tailed Deer' ? -Math.PI*3/4 : 0;object.rotation.y=turn;object.traverse(child=>{child.userData.creature=index});scene.add(object);return{...spec,kind:spec.kind??'animal',object,home:object.position.clone(),phase:random()*Math.PI*2}});
 
 const discoveries=document.querySelector('#discoveries')!;const RAY_ICON='<svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><path d="M16 6c3 4 10 5 14 6-3 3-8 4-11 6l-1 9-2 0-1-9c-3-2-8-3-11-6 4-1 11-2 14-6z" fill="#7fb2c9"/><circle cx="13" cy="13" r="1.2" fill="#173042"/><circle cx="19" cy="13" r="1.2" fill="#173042"/></svg>';
 const journalGroups:{biome:Biome;label:string}[]=[{biome:'woodland',label:'Woodland'},{biome:'underwater',label:'River'},{biome:'sky',label:'Sky'}];
@@ -347,11 +595,13 @@ function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDel
  if(!dialogueOpen&&started){forward.set(-Math.sin(yaw),0,-Math.cos(yaw));right.set(Math.cos(yaw),0,-Math.sin(yaw));velocity.set(0,0,0);if(keys.has('KeyW'))velocity.add(forward);if(keys.has('KeyS'))velocity.sub(forward);if(keys.has('KeyD'))velocity.add(right);if(keys.has('KeyA'))velocity.sub(right);if(keys.has('Space'))velocity.y+=1;if(keys.has('ShiftLeft')||keys.has('ShiftRight'))velocity.y-=1;if(velocity.lengthSq())camera.position.addScaledVector(velocity.normalize(),dt*(keys.has('ControlLeft')?11:6.2));camera.position.x=T.MathUtils.clamp(camera.position.x,-29,29);camera.position.z=T.MathUtils.clamp(camera.position.z,-29,29);camera.position.y=T.MathUtils.clamp(camera.position.y,-10.4,27)}
  const y=camera.position.y;const biome:Biome=currentBiome==='underwater'?(y>-.15?(y>8?'sky':'woodland'):'underwater'):currentBiome==='sky'?(y<7.2?(y<-.8?'underwater':'woodland'):'sky'):(y<-.8?'underwater':y>8?'sky':'woodland');setBiome(biome);const zone=zones[biome];(scene.background as T.Color).lerp(new T.Color(zone.color),dt*1.5);(scene.fog as T.FogExp2).color.lerp(new T.Color(zone.fog),dt*1.5);(scene.fog as T.FogExp2).density=T.MathUtils.lerp((scene.fog as T.FogExp2).density,biome==='underwater'?.055:.018,dt*2);hemi.intensity=T.MathUtils.lerp(hemi.intensity,biome==='underwater'?1.15:2.3,dt*2);sun.intensity=T.MathUtils.lerp(sun.intensity,biome==='underwater'?.5:3.2,dt*2);
  creatures.forEach(c=>{c.object.position.y=c.home.y+Math.sin(time*(c.biome==='woodland'?1.3:2)+c.phase)*(c.biome==='woodland'?.06:.35);if(c.biome!=='woodland')c.object.rotation.y=Math.sin(time*.35+c.phase)*.45;if(c.biome==='sky')c.object.rotation.z=Math.cos(time*.35+c.phase)*.2});
- wingBeats.forEach(w=>{w.pivot.rotation.z=w.rest+Math.sin(time*w.speed+w.phase)*w.amp});bubbles.forEach(b=>{b.position.y+=dt*b.userData.speed;if(b.position.y>-.4)b.position.y=-10.5});riverMaterial.opacity=.74+Math.sin(time*.8)*.04;
+ wingBeats.forEach(w=>{w.pivot.rotation[w.axis??'z']=w.rest+Math.sin(time*w.speed+w.phase)*w.amp});bubbles.forEach(b=>{b.position.y+=dt*b.userData.speed;if(b.position.y>-.4)b.position.y=-10.5});riverMaterial.opacity=.74+Math.sin(time*.8)*.04;
  for(let i=0;i<riverPosition.count;i++){const x=riverPosition.getX(i),y=riverPosition.getY(i);riverPosition.setZ(i,Math.sin(x*.6+time*1.4)*.03+Math.sin(y*.35+time*.9)*.022)}riverPosition.needsUpdate=true;riverGeometry.computeVertexNormals();
  swayables.forEach(s=>{s.object.rotation.z=Math.sin(time*1.6+s.phase)*s.strength});
  cloudDrifters.forEach(cd=>{cd.object.position.x+=dt*.18;if(cd.object.position.x>34)cd.object.position.x=-34;cd.object.position.y+=Math.sin(time*.15+cd.phase)*.003});
  nearby=-1;let best=6;let plantNear=-1;let plantBest=14;camera.getWorldDirection(forward);creatures.forEach((c,i)=>{const dx=c.object.position.x-camera.position.x,dz=c.object.position.z-camera.position.z,ground=Math.hypot(dx,dz);const to=c.object.position.clone().sub(camera.position),distance=to.length();if(distance<best&&to.normalize().dot(forward)>.35){best=distance;nearby=i}if(c.kind==='plant'&&ground<plantBest){plantBest=ground;plantNear=i}});if(started&&!dialogueOpen)mixer.notifyNearby(plantNear,plantNear>=0?creatures[plantNear].name:null,plantNear>=0?'plant':null);else mixer.notifyNearby(-1,null,null);const hint=document.querySelector('#hint')!;hint.classList.toggle('visible',nearby>=0&&!dialogueOpen);if(nearby>=0)hint.querySelector('span')!.textContent=creatures[nearby].kind==='plant'?`Listen to the ${creatures[nearby].name}`:`Meet the ${creatures[nearby].name}`;
  document.querySelector('#altitude')!.textContent=`${camera.position.y>=0?'+':'−'}${Math.abs(camera.position.y).toFixed(1).padStart(4,'0')} m`;renderer.render(scene,camera)}animate();
+
+
 
 
