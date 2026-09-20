@@ -3,7 +3,7 @@
 > **Step inside. Every life connects.**
 > A free, browser-based 3D ecosystem that teaches how nature works as a connected system, with an AI field guide that explains everything around *you*, and a creator that turns any nature diagram into an explorable 3D scene.
 
-**Built for STEELHACK XIII** · Track / theme: `<add track or theme>` · Demo: `<https://inside-nature.vercel.app/>` · 
+**Built for STEELHACK XIII**. Track/theme: Beyond the Chatbot / Out Loud / Seed Round / Press Start. Demo: `<https://inside-nature.vercel.app/>` · 
 
 <p align="center">
   <img
