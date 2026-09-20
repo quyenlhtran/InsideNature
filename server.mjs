@@ -10,7 +10,7 @@ const nvidiaKey = cleanSecret(process.env.NVIDIA_API_KEY);
 const elevenLabsKey = cleanSecret(process.env.ELEVEN_LABS_API_KEY || process.env.ELEVENLABS_API_KEY);
 
 const handleGuide = createGuideHandler({apiKey: nvidiaKey, model: NVIDIA_MODEL});
-const handleScene = createSceneHandler({apiKey: nvidiaKey, model: NVIDIA_VISION_MODEL});
+const handleScene = createSceneHandler({apiKey: nvidiaKey, visionModel: NVIDIA_VISION_MODEL, textModel: NVIDIA_MODEL});
 const handleSpeech = createSpeechHandler({apiKey: elevenLabsKey, voiceId: ELEVENLABS_VOICE_ID});
 const vite = await createViteServer({server: {middlewareMode: true}, appType: 'spa'});
 

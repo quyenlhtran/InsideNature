@@ -29,7 +29,7 @@ In a generated scene, click an object or aim at it and press `E` to read its des
 
 ## Image-to-scene creator
 
-The creator resizes the uploaded image in the browser, sends it to the server-only `/api/scene` route, and asks the configured NVIDIA vision model for a declarative `SceneSpec`. The server validates and limits every object before the browser sees it. The browser renderer supports a safe set of reusable shapes, labels, colors, and animations; it never executes model-generated code.
+The creator resizes the uploaded image in the browser, sends it to the server-only `/api/scene` route, and asks the configured NVIDIA vision model to analyze it. If the vision model responds with prose instead of JSON, the text model converts that analysis into a declarative `SceneSpec`. The server validates and limits every object before the browser sees it. The browser renderer supports a safe set of reusable shapes, labels, colors, and animations; it never executes model-generated code. Detailed diagrams can take about a minute because they may use both model stages.
 
 The default vision model is `meta/llama-3.2-11b-vision-instruct`. Change `NVIDIA_VISION_MODEL` in `app.config.mjs` to use another image-capable NVIDIA model. Without an API key, the creator provides a starter scene, including a volcano fallback when the filename mentions a volcano, eruption, magma, or lava.
 

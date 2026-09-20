@@ -1,5 +1,5 @@
 import {readJson, sendJson} from '../http.mjs';
-import {SCENE_SYSTEM_PROMPT, buildScenePrompt} from './prompts.mjs';
+import {SCENE_SYSTEM_PROMPT, buildSceneFromAnalysisPrompt, buildScenePrompt} from './prompts.mjs';
 
 const SHAPES = new Set(['box', 'sphere', 'cone', 'half-cone', 'cylinder', 'torus', 'plane']);
 const ANIMATIONS = new Set(['none', 'spin', 'float', 'pulse', 'flow']);
@@ -100,7 +100,7 @@ function fallbackScene(filename) {
   });
 }
 
-export function createSceneHandler({apiKey, model}) {
+export function createSceneHandler({apiKey, visionModel, textModel}) {
   return async function handleScene(req, res) {
     try {
       const body = await readJson(req, 6_500_000);
@@ -115,7 +115,7 @@ export function createSceneHandler({apiKey, model}) {
         method: 'POST',
         headers: {Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json'},
         body: JSON.stringify({
-          model,
+          model: visionModel,
           messages: [
             {role: 'system', content: SCENE_SYSTEM_PROMPT},
             {role: 'user', content: [
@@ -125,6 +125,7 @@ export function createSceneHandler({apiKey, model}) {
           ],
           temperature: 0.2,
           max_tokens: 2400,
+          response_format: {type: 'json_object'},
         }),
       });
       if (!response.ok) {
@@ -134,7 +135,36 @@ export function createSceneHandler({apiKey, model}) {
       const data = await response.json();
       const content = data?.choices?.[0]?.message?.content;
       if (typeof content !== 'string' || !content.trim()) throw new Error('Vision model returned no scene');
-      sendJson(res, 200, {source: 'nvidia', model, scene: validateScene(parseJson(content))});
+
+      let scene;
+      try {
+        scene = validateScene(parseJson(content));
+      } catch {
+        const conversion = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json'},
+          body: JSON.stringify({
+            model: textModel,
+            messages: [
+              {role: 'system', content: SCENE_SYSTEM_PROMPT},
+              {role: 'user', content: buildSceneFromAnalysisPrompt(filename, content)},
+            ],
+            temperature: 0.1,
+            max_tokens: 3000,
+            reasoning_effort: 'low',
+            response_format: {type: 'json_object'},
+          }),
+        });
+        if (!conversion.ok) {
+          const detail = (await conversion.text()).slice(0, 300);
+          throw new Error(`NVIDIA scene conversion returned ${conversion.status}: ${detail}`);
+        }
+        const conversionData = await conversion.json();
+        const converted = conversionData?.choices?.[0]?.message?.content;
+        if (typeof converted !== 'string' || !converted.trim()) throw new Error('Scene converter returned no JSON');
+        scene = validateScene(parseJson(converted));
+      }
+      sendJson(res, 200, {source: 'nvidia', model: visionModel, scene});
     } catch (error) {
       sendJson(res, 502, {error: error instanceof Error ? error.message : 'Scene generation failed'});
     }

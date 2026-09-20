@@ -336,7 +336,7 @@ const sceneInput=document.querySelector<HTMLInputElement>('#scene-image')!,scene
 sceneInput.addEventListener('change',()=>{creatorError.textContent='';if(previewUrl)URL.revokeObjectURL(previewUrl);const file=sceneInput.files?.[0];if(!file){scenePreview.hidden=true;return}previewUrl=URL.createObjectURL(file);scenePreview.src=previewUrl;scenePreview.hidden=false;document.querySelector<HTMLElement>('#upload-prompt')!.hidden=true});
 document.querySelector<HTMLFormElement>('#scene-creator')!.addEventListener('submit',async event=>{
  event.preventDefault();const file=sceneInput.files?.[0];if(!file){creatorError.textContent='Choose an image first.';return}
- const button=document.querySelector<HTMLButtonElement>('#generate-scene')!;button.disabled=true;creatorError.textContent='';mixer.startMusic();showLoading('Reading your picture','Building your 3D world','Finding the important shapes, labels, and learning moments.');
+ const button=document.querySelector<HTMLButtonElement>('#generate-scene')!;button.disabled=true;creatorError.textContent='';mixer.startMusic();showLoading('Reading your picture','Building your 3D world','Finding the important shapes, labels, and learning moments. Detailed diagrams can take about a minute.');
  try{const result=await generateScene(file);activateGeneratedScene(result)}catch(error){showStage(creatorStage);creatorError.textContent=error instanceof Error?error.message:'We could not build that scene. Please try another image.'}finally{button.disabled=false}
 });
 document.querySelector<HTMLFormElement>('#profile')!.addEventListener('submit',async event=>{
