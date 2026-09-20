@@ -4,6 +4,7 @@ import './styles.css';
 type Biome='underwater'|'woodland'|'sky';
 type FieldObject={name:string;icon:string;kind:'animal'|'plant';biome:Biome;fact:string;question:string;choices:string[];answer:number;object:T.Group;home:T.Vector3;phase:number};
 type VisitorProfile={name:string;interests:string;style:string};
+type QuizQuestion={question:string;choices:string[];answer:number;source:'nvidia'|'fallback'};
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML=`
   <main class="world" id="world"><div class="noise"></div></main>
@@ -19,7 +20,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML=`
     <div class="intro-inner intro-stage window-card profile-stage" id="profile-stage" hidden><div class="kicker">Before you explore</div><h2>Shape your field guide.</h2><p class="intro-copy">A few details help the guide connect each discovery to what interests you.</p><form class="profile" id="profile"><label><span>What should we call you?</span><input id="visitor-name" maxlength="40" placeholder="Explorer" autocomplete="given-name"></label><label><span>What are you curious about?</span><input id="visitor-interests" maxlength="240" placeholder="food webs, big cats, climate…"></label><label><span>How should we explain?</span><select id="visitor-style"><option value="curious">Curious & vivid</option><option value="simple">Simple & concise</option><option value="scientific">Scientific</option><option value="storylike">Like a nature story</option></select></label><button class="begin" id="begin" type="submit"><span>Start my exploration</span><i>→</i></button><small class="profile-note">Your field guide will adapt discoveries to your interests.</small></form></div>
     <div class="intro-stage window-card loading-stage" id="loading-stage" role="status" aria-live="polite" hidden><div class="loading-orbit"><i></i><i></i><i></i></div><div class="kicker">Preparing your journey</div><h2>Connecting the living world<span class="loading-ellipsis" aria-hidden="true"><i></i><i></i><i></i></span></h2><p>Building a field guide around your curiosity.</p></div>
   </section>
-  <section class="dialogue" id="dialogue" aria-modal="true" role="dialog"><article class="dialogue-card"><button class="dialogue-close" id="dialogue-close" aria-label="Close">×</button><div class="dialogue-tag" id="dialogue-tag"></div><div class="dialogue-heading"><h3 id="dialogue-name"></h3><span class="nim-badge" id="nim-badge">Field guide</span></div><p id="dialogue-fact"></p><div class="choices" id="choices"></div><p class="result" id="result"></p></article></section>`;
+  <section class="dialogue" id="dialogue" aria-modal="true" role="dialog"><article class="dialogue-card"><button class="dialogue-close" id="dialogue-close" aria-label="Close">×</button><div class="dialogue-tag" id="dialogue-tag"></div><div class="dialogue-heading"><h3 id="dialogue-name"></h3><span class="nim-badge" id="nim-badge">Field guide</span></div><p id="dialogue-fact"></p><div class="choices" id="choices"></div><p class="result" id="result" role="status" aria-live="polite"></p></article></section>`;
 
 const world=document.querySelector<HTMLElement>('#world')!;
 const renderer=new T.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
@@ -100,7 +101,7 @@ discoveries.innerHTML=journalGroups.map(g=>{const members=creatures.map((c,i)=>(
 function markFound(index:number){const c=creatures[index];const badge=document.querySelector<HTMLButtonElement>(`.discovery[data-index="${index}"]`);if(badge){badge.classList.add('found');badge.disabled=false;badge.title=`${c.name} — open field note`;badge.setAttribute('aria-label',`${c.name}, discovered. Open field note`);badge.querySelector('.d-name')!.textContent=shortName(c.name);}
  const total=creatures.filter(o=>o.biome===c.biome).length,done=[...found].filter(i=>creatures[i].biome===c.biome).length;document.querySelector(`[data-group-count="${c.biome}"]`)!.textContent=`${done} / ${total}`;}
 document.querySelector('#progress-count')!.textContent=`0 / ${creatures.length}`;
-const found=new Set<number>();const keys=new Set<string>();let yaw=0,pitch=-.06,currentBiome:Biome='woodland',nearby=-1,dialogueOpen=false,started=false;
+const found=new Set<number>();const keys=new Set<string>();let yaw=0,pitch=-.06,currentBiome:Biome='woodland',nearby=-1,dialogueOpen=false,dialogueSession=0,started=false;
 const velocity=new T.Vector3(),forward=new T.Vector3(),right=new T.Vector3();const clock=new T.Clock();
 const raycaster=new T.Raycaster();const pointer=new T.Vector2();const personalizedCopy=new Map<number,string>();
 let visitor:VisitorProfile={name:'Explorer',interests:'wildlife and ecosystems',style:'curious'};
@@ -121,27 +122,57 @@ async function streamPersonalizedText(subject:FieldObject,onText:(text:string)=>
  text=text.trim();if(!text)throw new Error('Guide returned no text');
  return{text,source:'nvidia' as const};
 }
+function randomizeQuiz(quiz:QuizQuestion):QuizQuestion{
+ const choices=quiz.choices.map((label,index)=>({label,correct:index===quiz.answer}));
+ for(let i=choices.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[choices[i],choices[j]]=[choices[j],choices[i]];}
+ return{...quiz,choices:choices.map(choice=>choice.label),answer:choices.findIndex(choice=>choice.correct)};
+}
+function localRetryQuiz(subject:FieldObject,attempt:number):QuizQuestion{
+ const questions=[`Which statement about ${subject.name} matches the field note?`,`What is the best explanation of ${subject.name}'s role here?`,`Which ecological connection is true for ${subject.name}?`,`Based on what you learned, which observation about ${subject.name} is accurate?`];
+ return randomizeQuiz({question:questions[attempt%questions.length],choices:[...subject.choices],answer:subject.answer,source:'fallback'});
+}
+async function getRetryQuiz(subject:FieldObject,previousQuestions:string[],attempt:number):Promise<QuizQuestion>{
+ const response=await fetch('/api/personalize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...visitor,quiz:{name:subject.name,fact:subject.fact,kind:subject.kind,biome:subject.biome,choices:subject.choices,answer:subject.answer,previousQuestions,attempt}})});
+ if(!response.ok)throw new Error('Guide unavailable');
+ const quiz=await response.json() as QuizQuestion;
+ if(typeof quiz.question!=='string'||!Array.isArray(quiz.choices)||quiz.choices.length<2||!quiz.choices.every(choice=>typeof choice==='string')||!Number.isInteger(quiz.answer)||quiz.answer<0||quiz.answer>=quiz.choices.length)throw new Error('Invalid quiz');
+ return randomizeQuiz(quiz);
+}
+function setFieldNoteLoading(fact:Element,prefix=''){
+ fact.replaceChildren();if(prefix)fact.append(document.createTextNode(`${prefix} `));
+ const loader=document.createElement('span');loader.className='field-note-loading';loader.setAttribute('aria-label','Preparing question');loader.innerHTML='<b aria-hidden="true"><i></i><i></i><i></i></b>';fact.append(loader);fact.setAttribute('aria-busy','true');
+}
 async function openDialogue(index:number){
- const c=creatures[index];dialogueOpen=true;if(document.pointerLockElement)document.exitPointerLock();
+ const c=creatures[index],session=++dialogueSession;dialogueOpen=true;if(document.pointerLockElement)document.exitPointerLock();
  document.querySelector('#dialogue')!.classList.add('open');
  document.querySelector('#dialogue-tag')!.textContent=`${c.kind==='plant'?'Flora':'Wildlife'} encounter · ${zones[c.biome].name}`;
  document.querySelector('#dialogue-name')!.textContent=c.name;
- const fact=document.querySelector('#dialogue-fact')!,badge=document.querySelector('#nim-badge')!;
+ const fact=document.querySelector('#dialogue-fact')!,badge=document.querySelector('#nim-badge')!,choices=document.querySelector('#choices')!,result=document.querySelector('#result')!;
  const cached=personalizedCopy.get(index);
- if(cached){fact.textContent=`${cached} ${c.question}`;badge.textContent='Personalized';}
- else{fact.innerHTML='<span class="field-note-loading" aria-label="Preparing field note"><b aria-hidden="true"><i></i><i></i><i></i></b></span>';fact.setAttribute('aria-busy','true');badge.textContent='Field guide';}
- document.querySelector('#result')!.textContent='';
- const choices=document.querySelector('#choices')!;choices.classList.toggle('loading',!cached);choices.innerHTML=c.choices.map((choice,i)=>`<button data-choice="${i}" ${cached?'':'disabled'}>${choice}</button>`).join('');
- choices.querySelectorAll<HTMLButtonElement>('button').forEach(button=>button.onclick=()=>{const selected=Number(button.dataset.choice);choices.querySelectorAll('button').forEach((b,i)=>b.classList.add(i===c.answer?'correct':i===selected?'wrong':''));const result=document.querySelector('#result')!;if(selected===c.answer){result.textContent='Field note saved · ecosystem link understood';found.add(index);markFound(index);document.querySelector('#progress-count')!.textContent=`${found.size} / ${creatures.length}`;(document.querySelector('#progress-bar') as HTMLElement).style.width=`${found.size/creatures.length*100}%`;}else result.textContent='Look at the clue again and try another answer.';});
+ let description=cached??'',attempt=0;const previousQuestions:string[]=[];
+ const isCurrent=()=>dialogueOpen&&dialogueSession===session&&document.querySelector('#dialogue-name')!.textContent===c.name;
+ const showQuiz=(quiz:QuizQuestion)=>{
+  if(!isCurrent())return;fact.removeAttribute('aria-busy');fact.textContent=`${description} ${quiz.question}`;badge.textContent=quiz.source==='nvidia'?'Personalized':'Field guide';result.textContent='';choices.replaceChildren();choices.classList.remove('loading');
+  quiz.choices.forEach((label,i)=>{const button=document.createElement('button');button.textContent=label;button.dataset.choice=String(i);button.onclick=async()=>{
+   if(i===quiz.answer){button.classList.add('correct');choices.querySelectorAll<HTMLButtonElement>('button').forEach(choice=>choice.disabled=true);result.textContent='Field note saved · ecosystem link understood';found.add(index);markFound(index);document.querySelector('#progress-count')!.textContent=`${found.size} / ${creatures.length}`;(document.querySelector('#progress-bar') as HTMLElement).style.width=`${found.size/creatures.length*100}%`;return;}
+   button.classList.add('wrong');choices.querySelectorAll<HTMLButtonElement>('button').forEach(choice=>choice.disabled=true);result.textContent='Not quite · preparing another question';choices.classList.add('loading');attempt+=1;setFieldNoteLoading(fact,description);
+   let next:QuizQuestion;try{next=await getRetryQuiz(c,previousQuestions,attempt);}catch{next=localRetryQuiz(c,attempt);}
+   previousQuestions.push(next.question);showQuiz(next);
+  };choices.append(button);});
+ };
+ result.textContent='';choices.classList.add('loading');setFieldNoteLoading(fact,description);badge.textContent='Field guide';
+ let quizReady=false;
+ const initialQuizPromise=getRetryQuiz(c,previousQuestions,attempt).catch(()=>localRetryQuiz(c,attempt)).then(quiz=>{quizReady=true;return quiz;});
  if(!cached){
-  try{const answer=await streamPersonalizedText(c,partial=>{if(dialogueOpen&&document.querySelector('#dialogue-name')!.textContent===c.name){fact.textContent=partial;badge.textContent='Writing';}});personalizedCopy.set(index,answer.text);if(dialogueOpen&&document.querySelector('#dialogue-name')!.textContent===c.name){fact.textContent=`${answer.text} ${c.question}`;badge.textContent=answer.source==='nvidia'?'Personalized':'Field guide';}}
-  catch{fact.textContent=`${c.fact} ${c.question}`;badge.textContent='Field guide';}
-  finally{fact.removeAttribute('aria-busy');choices.classList.remove('loading');choices.querySelectorAll<HTMLButtonElement>('button').forEach(button=>button.disabled=false);}
+  try{const answer=await streamPersonalizedText(c,partial=>{if(isCurrent()){fact.textContent=partial;badge.textContent='Writing';}});description=answer.text;personalizedCopy.set(index,answer.text);}
+  catch{description=c.fact;}
+  if(!quizReady&&isCurrent())setFieldNoteLoading(fact,description);
  }
+ const initialQuiz=await initialQuizPromise;previousQuestions.push(initialQuiz.question);showQuiz(initialQuiz);
 }
 function focusCreature(index:number){const c=creatures[index],p=c.home,dist=7;camera.position.set(p.x,p.y+(c.biome==='sky'?.5:1.2),p.z+dist);yaw=0;pitch=Math.atan2(p.y-camera.position.y,dist);setBiome(c.biome);void openDialogue(index)}
 discoveries.addEventListener('click',e=>{const badge=(e.target as HTMLElement).closest<HTMLButtonElement>('.discovery.found');if(badge)focusCreature(Number(badge.dataset.index))});
-function closeDialogue(){dialogueOpen=false;document.querySelector('#dialogue')!.classList.remove('open');}
+function closeDialogue(){dialogueOpen=false;dialogueSession+=1;document.querySelector('#dialogue')!.classList.remove('open');}
 document.querySelector('#dialogue-close')!.addEventListener('click',closeDialogue);
 document.querySelector('#dialogue')!.addEventListener('click',e=>{if(e.target===document.querySelector('#dialogue'))closeDialogue()});
 document.querySelectorAll<HTMLButtonElement>('[data-biome]').forEach(button=>button.onclick=()=>travel(button.dataset.biome as Biome));
