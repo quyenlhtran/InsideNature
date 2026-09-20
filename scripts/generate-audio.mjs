@@ -6,7 +6,7 @@
  *   npm run generate-audio
  *   npm run generate-audio -- --force
  *
- * Loads ELEVENLABS_API_KEY from the environment. The package.json script
+ * Loads ELEVEN_LABS_API_KEY from the environment. The package.json script
  * runs `node --env-file=.env` so a local .env file is picked up.
  */
 import { mkdir, writeFile, access } from 'node:fs/promises';
@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const outDir = join(root, 'public', 'audio');
 const force = process.argv.includes('--force');
-const apiKey = process.env.ELEVENLABS_API_KEY || process.env.ELEVEN_LABS_API_KEY;
+const apiKey = String(process.env.ELEVEN_LABS_API_KEY || process.env.ELEVENLABS_API_KEY || '').trim().replace(/^['"]|['"]$/g, '');
 
 const SOUND_URL = 'https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128';
 const MUSIC_URL = 'https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128';
@@ -113,7 +113,7 @@ const musicPrompt =
   'An upbeat instrumental nature-exploration game bed: bright acoustic guitar, light percussion, warm bass, optimistic woodland adventure, seamless loop, no vocals, no lyrics, no speech.';
 
 if (!apiKey) {
-  console.error('ELEVENLABS_API_KEY is not set. Add it to .env and run: npm run generate-audio');
+  console.error('ELEVEN_LABS_API_KEY is not set. Add it to .env and run: npm run generate-audio');
   process.exit(1);
 }
 

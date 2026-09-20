@@ -331,8 +331,8 @@ document.querySelector<HTMLFormElement>('#profile')!.addEventListener('submit',a
  visitor={name:(document.querySelector<HTMLInputElement>('#visitor-name')!.value.trim()||'Explorer'),interests:(document.querySelector<HTMLInputElement>('#visitor-interests')!.value.trim()||'wildlife and ecosystems'),style:document.querySelector<HTMLSelectElement>('#visitor-style')!.value};
  const button=document.querySelector<HTMLButtonElement>('#begin')!;button.disabled=true;profileStage.hidden=true;loadingStage.hidden=false;
  const minimumLoadingTime=new Promise<void>(resolve=>setTimeout(resolve,900));
- try{const answer=await getPersonalizedText();await minimumLoadingTime;document.querySelector('#ai-status')!.textContent=answer.source==='nvidia'?'Personal guide online':'Local guide mode';}
- catch{await minimumLoadingTime;document.querySelector('#ai-status')!.textContent='Local guide mode';}
+ try{const answer=await getPersonalizedText();await minimumLoadingTime;document.querySelector('#ai-status')!.textContent=answer.source==='nvidia'?'Personal guide online':'Local guide mode';void mixer.speak(answer.text).catch(()=>{});}
+ catch{await minimumLoadingTime;document.querySelector('#ai-status')!.textContent='Local guide mode';void mixer.speak(`Welcome, ${visitor.name}. We’ll connect every discovery to ${visitor.interests} as you explore.`).catch(()=>{});}
  started=true;document.querySelector('#intro')!.classList.add('hidden');
 });
 renderer.domElement.addEventListener('click',event=>{if(!started||dialogueOpen)return;const rect=renderer.domElement.getBoundingClientRect();if(document.pointerLockElement===renderer.domElement)pointer.set(0,0);else pointer.set(((event.clientX-rect.left)/rect.width)*2-1,-((event.clientY-rect.top)/rect.height)*2+1);raycaster.setFromCamera(pointer,camera);const hit=raycaster.intersectObjects(creatures.map(c=>c.object),true).find(intersection=>intersection.object.userData.creature!==undefined);if(hit){openDialogue(Number(hit.object.userData.creature));return}renderer.domElement.requestPointerLock().catch(()=>{});});

@@ -2,8 +2,8 @@ import { createServer as createHttpServer } from 'node:http';
 import { createServer as createViteServer } from 'vite';
 import { APP_HOST, APP_PORT, NVIDIA_MODEL, ELEVENLABS_VOICE_ID } from './app.config.mjs';
 
-const apiKey = process.env.NVIDIA_API_KEY;
-const elevenLabsKey = process.env.ELEVENLABS_API_KEY || process.env.ELEVEN_LABS_API_KEY;
+const apiKey = String(process.env.NVIDIA_API_KEY || '').trim().replace(/^['"]|['"]$/g, '');
+const elevenLabsKey = String(process.env.ELEVEN_LABS_API_KEY || process.env.ELEVENLABS_API_KEY || '').trim().replace(/^['"]|['"]$/g, '');
 
 const vite = await createViteServer({
   server: { middlewareMode: true },
@@ -155,7 +155,7 @@ createHttpServer(async (req, res) => {
         return send(res, 400, { error: 'text is required' });
       }
       if (!elevenLabsKey) {
-        return send(res, 502, { error: 'ELEVENLABS_API_KEY is not set' });
+        return send(res, 502, { error: 'ELEVEN_LABS_API_KEY is not set' });
       }
 
       const response = await fetch(
@@ -196,5 +196,5 @@ createHttpServer(async (req, res) => {
 }).listen(APP_PORT, APP_HOST, () => {
   console.log(`Inside Nature: http://localhost:${APP_PORT}`);
   console.log(apiKey ? `NVIDIA NIM enabled (${NVIDIA_MODEL})` : 'NVIDIA_API_KEY not set; using local fallback copy');
-  console.log(elevenLabsKey ? `ElevenLabs speak enabled (${ELEVENLABS_VOICE_ID})` : 'ELEVENLABS_API_KEY not set; /api/speak disabled');
+  console.log(elevenLabsKey ? `ElevenLabs speak enabled (${ELEVENLABS_VOICE_ID})` : 'ELEVEN_LABS_API_KEY not set; /api/speak disabled');
 });

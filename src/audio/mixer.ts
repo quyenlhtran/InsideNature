@@ -147,7 +147,10 @@ export async function speak(text: string) {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({text: clipped}),
     });
-    if (!response.ok || gen !== speakGen) return;
+    if (!response.ok || gen !== speakGen) {
+      if (!response.ok) console.warn('Spoken guide unavailable', response.status);
+      return;
+    }
     const blob = await response.blob();
     if (gen !== speakGen) return;
     const url = URL.createObjectURL(blob);
