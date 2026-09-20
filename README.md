@@ -31,7 +31,7 @@ In a generated scene, click an object or aim at it and press `E` to read its des
 
 The creator resizes the uploaded image in the browser and sends it to the server-only `/api/scene` route. Students explicitly choose **Try NVIDIA Nemotron** or **Try Gemini Pro**. Nemotron inspects the pixels, chooses `cutaway`, `landscape`, or `labeled-model`, and sends its visual plan to the NVIDIA-hosted structured scene compiler. Gemini is an independent direct image-to-structured-scene option. Both produce the same declarative `SceneSpec`, which the server validates before the browser sees it. The generic Three.js renderer supports a safe set of reusable shapes, labels, colors, and animations; it never executes model-generated code.
 
-The visual planner is the current multimodal `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`; the alternative is `gemini-3.1-pro-preview`. Both are configured in `app.config.mjs`. The app does not set output-token caps or request timeouts; each provider can still enforce its own service limits. A model button is unavailable at the API level when its server-side key is missing.
+The NVIDIA path uses `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` for visual planning and the NVIDIA-authored `nvidia/nemotron-3.5-lightning-30b-a3b` for structured scene compilation. The independent alternative is `gemini-3.1-pro-preview`. These models are configured in `app.config.mjs`. The app does not set output-token caps or request timeouts; each provider can still enforce its own service limits. A model button is unavailable at the API level when its server-side key is missing.
 
 A generated scene is an educational interpretation of the visible image, not an exact reconstruction of hidden 3D geometry.
 
@@ -41,7 +41,7 @@ Both paths request schema-constrained JSON rather than relying on prompt-only fo
 
 ## NVIDIA guide
 
-The server calls NVIDIA's OpenAI-compatible `POST /v1/chat/completions` endpoint. The default is the fast `openai/gpt-oss-20b` model hosted by NVIDIA NIM; switch `NVIDIA_MODEL` in `app.config.mjs` to another model available to your NVIDIA account. The API key never enters the browser bundle. If the key is missing or the service is unavailable, the experience uses its built-in field-guide copy instead.
+The server calls NVIDIA's OpenAI-compatible `POST /v1/chat/completions` endpoint. The default text and scene-compilation model is NVIDIA Nemotron 3.5 Lightning; switch `NVIDIA_MODEL` in `app.config.mjs` to another model available to your NVIDIA account. The API key never enters the browser bundle. If the key is missing or the service is unavailable, the ready-made game uses its built-in field-guide copy.
 
 AI code is kept separate from the game runtime:
 
