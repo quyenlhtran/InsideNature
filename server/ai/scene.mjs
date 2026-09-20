@@ -6,7 +6,8 @@ import {
   buildSceneFromAnalysisPrompt,
 } from './prompts.mjs';
 
-const SHAPES = new Set(['box', 'sphere', 'cone', 'half-cone', 'cylinder', 'torus', 'plane']);
+const SHAPES = new Set(['box', 'sphere', 'cone', 'half-cone', 'cylinder', 'torus', 'plane', 'stratum', 'root', 'rock']);
+const PRESENTATIONS = new Set(['cutaway', 'landscape', 'model']);
 const ANIMATIONS = new Set(['none', 'spin', 'float', 'pulse', 'flow']);
 const colorPattern = /^#[0-9a-f]{6}$/i;
 
@@ -22,7 +23,7 @@ const color = (value, fallback) => colorPattern.test(String(value)) ? String(val
 function parseJson(content) {
   const start = content.indexOf('{');
   const end = content.lastIndexOf('}');
-  if (start < 0 || end <= start) throw new Error('Vision model returned invalid scene JSON');
+  if (start < 0 || end <= start) throw new Error('Scene compiler returned invalid JSON');
   return JSON.parse(content.slice(start, end + 1));
 }
 
@@ -34,7 +35,7 @@ function chooseRenderStrategy(analysis) {
   return 'labeled-model';
 }
 
-function validateScene(input) {
+function validateScene(input, defaultPresentation = 'landscape') {
   const ids = new Set();
   const objects = (Array.isArray(input.objects) ? input.objects : []).slice(0, 36).map((item, index) => {
     let id = text(item?.id, 48, `object-${index + 1}`).replace(/[^a-z0-9_-]/gi, '-');
@@ -66,6 +67,7 @@ function validateScene(input) {
   return {
     title: text(input.title, 80, 'My 3D Discovery'),
     summary: text(input.summary, 240, 'Explore the scene and select its parts to learn more.'),
+    presentation: PRESENTATIONS.has(input.presentation) ? input.presentation : defaultPresentation,
     environment: {
       background: color(input.environment?.background, '#9fd5e1'),
       ground: color(input.environment?.ground, '#426b4c'),
@@ -79,11 +81,40 @@ function validateScene(input) {
   };
 }
 
-function fallbackScene(filename) {
+function fallbackScene(filename, analysis = '') {
+  const soil = /soil|horizon|earth|ground|strata|bedrock|subsoil/i.test(`${filename} ${analysis}`);
+  if (soil) return validateScene({
+    title: 'Explore the Soil Beneath Us',
+    summary: 'Separate the layers, walk around the soil profile, and select each horizon to discover how soil changes with depth.',
+    presentation: 'cutaway',
+    environment: {background: '#c9e5e2', ground: '#58634a'},
+    camera: {position: [0, 5, 19], target: [0, 2, 0]},
+    objects: [
+      {id: 'organic', name: 'O Horizon', description: 'Fresh leaves and other once-living material begin breaking down at the surface.', shape: 'stratum', position: [0, 5.1, 0], scale: [11, 0.55, 7], color: '#302219'},
+      {id: 'topsoil', name: 'A Horizon', description: 'Dark topsoil mixes minerals with humus and supports many roots and soil animals.', shape: 'stratum', position: [0, 4.25, 0], scale: [11, 1.15, 7], color: '#5b3025'},
+      {id: 'eluviation', name: 'E Horizon', description: 'Water carries some clay and minerals out of this lighter-colored layer.', shape: 'stratum', position: [0, 3.3, 0], scale: [11, 0.75, 7], color: '#c59277'},
+      {id: 'subsoil', name: 'Bt Horizon', description: 'Clay and iron carried from above collect in this reddish subsoil.', shape: 'stratum', position: [0, 2.05, 0], scale: [11, 1.7, 7], color: '#8f4332'},
+      {id: 'parent', name: 'C Horizon', description: 'Weathered pieces of parent rock slowly provide minerals for the soil above.', shape: 'stratum', position: [0, 0.35, 0], scale: [11, 1.8, 7], color: '#a98765'},
+      {id: 'bedrock', name: 'R Horizon', description: 'Solid bedrock lies below the developing soil horizons.', shape: 'stratum', position: [0, -1.25, 0], scale: [11, 1.4, 7], color: '#595765'},
+      {id: 'root-one', name: 'Deep root', description: 'Roots hold soil in place and carry water and minerals up to plants.', shape: 'root', position: [-2.3, 4.1, 0.4], scale: [0.22, 3.1, 0.22], rotation: [0, 0, -0.28], color: '#d4b38b'},
+      {id: 'root-two', name: 'Branching root', description: 'Fine roots spread through topsoil where water and nutrients are easier to find.', shape: 'root', position: [1.6, 4.25, 0.7], scale: [0.18, 2.6, 0.18], rotation: [0, 0, 0.38], color: '#d4b38b'},
+      {id: 'rock-one', name: 'Weathered rock', description: 'Rock fragments break into smaller pieces through weathering.', shape: 'rock', position: [-2.8, 0.35, 0.6], scale: [0.55, 0.38, 0.5], rotation: [0.2, 0.4, 0], color: '#77706c'},
+      {id: 'rock-two', name: 'Weathered rock', description: 'These fragments are part of the material from which soil develops.', shape: 'rock', position: [2.1, 0.1, 0.8], scale: [0.7, 0.45, 0.55], rotation: [0.1, 0.8, 0.2], color: '#817970'},
+    ],
+    labels: [
+      {text: 'O · organic', objectId: 'organic', position: [6.5, 5.1, 0]},
+      {text: 'A · topsoil', objectId: 'topsoil', position: [6.5, 4.25, 0]},
+      {text: 'E · leached layer', objectId: 'eluviation', position: [6.5, 3.3, 0]},
+      {text: 'Bt · subsoil', objectId: 'subsoil', position: [6.5, 2.05, 0]},
+      {text: 'C · parent material', objectId: 'parent', position: [6.5, 0.35, 0]},
+      {text: 'R · bedrock', objectId: 'bedrock', position: [6.5, -1.25, 0]},
+    ],
+  }, 'cutaway');
   const volcano = /volcano|eruption|magma|lava/i.test(filename);
   if (volcano) return validateScene({
     title: 'Inside a Volcano',
     summary: 'Explore how magma travels from deep underground and erupts as lava.',
+    presentation: 'cutaway',
     environment: {background: '#bfe4ee', ground: '#6b332b'},
     camera: {position: [0, 7, 18], target: [0, 3, 0]},
     objects: [
@@ -99,7 +130,7 @@ function fallbackScene(filename) {
       {text: 'Magma chamber', objectId: 'magma', position: [0, -2.2, 0]},
       {text: 'Flowing lava', objectId: 'lava', position: [4.2, 4.8, 0]},
     ],
-  });
+  }, 'cutaway');
   return validateScene({
     title: 'My Nature Scene',
     summary: 'This starter scene appears when image analysis is unavailable. Try exploring each object.',
@@ -115,10 +146,12 @@ function fallbackScene(filename) {
 
 export function createSceneHandler({apiKey, nemotronModel, textModel}) {
   return async function handleScene(req, res) {
+    let filename = 'uploaded image';
+    let analysis = '';
     try {
       const body = await readJson(req, 6_500_000);
       const image = String(body.image || '');
-      const filename = text(body.filename, 120, 'uploaded image');
+      filename = text(body.filename, 120, 'uploaded image');
       if (!/^data:image\/(png|jpeg);base64,/i.test(image)) {
         return sendJson(res, 400, {error: 'Upload a PNG or JPEG image'});
       }
@@ -146,6 +179,7 @@ export function createSceneHandler({apiKey, nemotronModel, textModel}) {
       const data = await response.json();
       const content = data?.choices?.[0]?.message?.content;
       if (typeof content !== 'string' || !content.trim()) throw new Error('Nemotron returned no visual plan');
+      analysis = content;
 
       const renderStrategy = chooseRenderStrategy(content);
       const conversion = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
@@ -169,7 +203,7 @@ export function createSceneHandler({apiKey, nemotronModel, textModel}) {
       const conversionData = await conversion.json();
       const converted = conversionData?.choices?.[0]?.message?.content;
       if (typeof converted !== 'string' || !converted.trim()) throw new Error('Scene compiler returned no JSON');
-      const scene = validateScene(parseJson(converted));
+      const scene = validateScene(parseJson(converted), renderStrategy === 'cutaway' ? 'cutaway' : renderStrategy === 'landscape' ? 'landscape' : 'model');
       sendJson(res, 200, {
         source: 'nvidia',
         model: nemotronModel,
@@ -177,6 +211,11 @@ export function createSceneHandler({apiKey, nemotronModel, textModel}) {
         scene,
       });
     } catch (error) {
+      if (analysis) return sendJson(res, 200, {
+        source: 'fallback',
+        warning: error instanceof Error ? error.message : 'Scene compilation failed',
+        scene: fallbackScene(filename, analysis),
+      });
       sendJson(res, 502, {error: error instanceof Error ? error.message : 'Scene generation failed'});
     }
   };

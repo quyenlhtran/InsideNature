@@ -35,6 +35,8 @@ The visual planner is the current multimodal `nvidia/nemotron-3-nano-omni-30b-a3
 
 A generated scene is an educational interpretation of the visible image, not an exact reconstruction of hidden 3D geometry.
 
+Layered diagrams use dedicated procedural geometry instead of unrelated boxes. Nemotron records the visible horizons and their order, the compiler emits one `stratum` object per layer, and the renderer builds irregular solid surfaces with real depth. Soil and rock cutaways can also contain `root` and `rock` objects. Students can click every part for its explanation or use **Separate layers** to pull a profile apart and inspect the horizons individually. If scene compilation fails after Nemotron has analyzed an image, the server uses that analysis to return a safe layered fallback instead of exposing broken model JSON to the browser.
+
 ## NVIDIA guide
 
 The server calls NVIDIA's OpenAI-compatible `POST /v1/chat/completions` endpoint. The default is the fast `openai/gpt-oss-20b` model hosted by NVIDIA NIM; switch `NVIDIA_MODEL` in `app.config.mjs` to another model available to your NVIDIA account. The API key never enters the browser bundle. If the key is missing or the service is unavailable, the experience uses its built-in field-guide copy instead.

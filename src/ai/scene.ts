@@ -1,4 +1,4 @@
-export type SceneShape = 'box' | 'sphere' | 'cone' | 'half-cone' | 'cylinder' | 'torus' | 'plane';
+export type SceneShape = 'box' | 'sphere' | 'cone' | 'half-cone' | 'cylinder' | 'torus' | 'plane' | 'stratum' | 'root' | 'rock';
 export type SceneAnimation = 'none' | 'spin' | 'float' | 'pulse' | 'flow';
 export type Vector3Tuple = [number, number, number];
 
@@ -18,6 +18,7 @@ export type SceneObjectSpec = {
 export type SceneSpec = {
   title: string;
   summary: string;
+  presentation: 'cutaway' | 'landscape' | 'model';
   environment: {background: string; ground: string};
   camera: {position: Vector3Tuple; target: Vector3Tuple};
   objects: SceneObjectSpec[];
