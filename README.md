@@ -11,9 +11,9 @@
 | Name | Link |
 |---|---|
 | Quyen Tran | [@quyenlhtran](https://github.com/quyenlhtran) |
-| Quynh Tran | [GitHub](https://github.com/<username>) |
-| Quan Tran | [GitHub](https://github.com/<username>) |
-| Truong Nguyen Tien Khanh | [GitHub](https://github.com/<username>) |
+| Quynh Tran | [@quyenlhtran](https://github.com/quyenlhtran>) |
+| Quan Tran | [@quantr10](https://github.com/quantr10) |
+| Truong Nguyen Tien Khanh | [@heyamktr](https://github.com/heyamktr) |
 
 
 ## The problem
