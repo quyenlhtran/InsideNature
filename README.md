@@ -5,7 +5,16 @@
 
 **Built for STEELHACK XIII** · Track / theme: `<add track or theme>` · Demo: `<add link>` · Video: `<add link>`
 
+<p align="center">
+  <img
+    width="800"
+    alt="Inside Nature Gameplay Demo"
+    src="https://github.com/user-attachments/assets/cfcb947e-787d-43df-90b1-56cff6b0a9b8"
+  />
+</p>
+
 ---
+
 ## Team
 
 | Name | Link |
