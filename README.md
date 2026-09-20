@@ -6,6 +6,15 @@
 **Built for STEELHACK XIII** · Track / theme: `<add track or theme>` · Demo: `<add link>` · Video: `<add link>`
 
 ---
+## Team
+
+| Name | Link |
+|---|---|
+| Quyen Tran | [@quyenlhtran](https://github.com/quyenlhtran) |
+| Quynh Tran | [GitHub](https://github.com/<username>) |
+| Quan Tran | [GitHub](https://github.com/<username>) |
+| Truong Nguyen Tien Khanh | [GitHub](https://github.com/<username>) |
+
 
 ## The problem
 
@@ -166,10 +175,6 @@ We'd rather be upfront about what this is today:
 - Server-side species lookup (send only an id), rate limits and timeouts
 - Shuffled, three-option quizzes and a completion moment
 - More languages and a teacher view for uploading class material
-
-## Team
-
-`<add names, roles, links>`
 
 ## Acknowledgements
 
