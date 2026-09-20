@@ -39,8 +39,7 @@ Four gaps sit behind it:
 |---|---|
 | **Access** | No ticket, no transport, no guide |
 | **Engagement** | Facts get memorized, not felt, and lose to the screens competing for attention |
-| **Personalization** | A child fascinated by big cats and one fascinated by climate get the same text |
-| **Perspective** | We love the tiger and forget the frog, the hemlock and the insects holding the forest together |
+| **Perspective** | You can choose from several response styles depending on your needs, whether you're a high school student, a curious learner, or looking for a more scientific explanation. |
 
 > **How might we give every child, wherever they live, the experience of standing inside an ecosystem and understanding why every living thing in it matters?**
 
@@ -49,11 +48,14 @@ Four gaps sit behind it:
 Inside Nature runs in a web browser with no download, no ticket and no account. It has two modes.
 
 ### 1. Beginner game: explore a living world
-- Walk through **three biomes** (woodland, river and open sky) and discover **15 animals and plants**.
-- Every species is explained by the **role it plays for others** (shade that cools the stream, insects that link water to sky), not just by its traits, and ends with a short question that checks you understood.
-- An **AI guide personalizes** the welcome and every field note around your name, interests and preferred explanation style. The notes stream in live.
-- A **spoken guide** reads each note aloud, with species sounds (growls, croaks, rustles) and background music.
-- If the AI is unavailable, built-in field-guide text takes over, so the game still runs.
+
+- Explore **three biomes** (woodland, river, and open sky) and discover **15 animals and plants**.
+- Learn how each species **connects to the ecosystem**, not just what it is. For example, trees provide shade that cools the stream, while insects connect life in the water to animals in the sky.
+- Get **AI-personalized explanations** based on your name, interests, and preferred learning style.
+- Choose from different explanation levels, whether you're a **high school student, a curious learner, or looking for a more scientific explanation**.
+- An **ElevenLabs-powered voice guide** reads each explanation aloud, with species sounds (growls, croaks, rustles) and background music.
+- Each discovery ends with a **short question** to check your understanding.
+- If the AI is unavailable, built-in field-guide content takes over so the game can still run.
 
 ### 2. Image-to-scene creator: turn any diagram into 3D
 
@@ -74,10 +76,8 @@ Inside Nature runs in a web browser with no download, no ticket and no account. 
 
 - **Grounded, not made up.** Every guide note starts from a fixed, verified fact, and the prompt forbids inventing measurements or conservation status. (This is a prompt-level guardrail, not a guarantee. See [Limitations](#limitations).)
 - **The AI never runs code.** In the creator, models return schema-constrained JSON (a `SceneSpec`). The server validates it, and a generic Three.js renderer draws it from a fixed set of shapes, colors and animations. Model-generated code is never executed.
-- **Honest failure.** Each creator button makes exactly one conversion attempt. There is no silent retry, provider switch or fallback scene, and on failure the student sees a short, readable message and can try the other model.
 - **No model files.** All geometry and animation are generated in the browser with Three.js.
-- **Keys stay server-side.** API keys never enter the browser bundle.
-
+  
 ## How it works
 
 ```
