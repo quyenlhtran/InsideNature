@@ -5,6 +5,7 @@ import * as mixer from './audio.ts';
 type Biome='underwater'|'woodland'|'sky';
 type FieldObject={name:string;icon:string;kind:'animal'|'plant';biome:Biome;fact:string;question:string;choices:string[];answer:number;object:T.Group;home:T.Vector3;phase:number};
 type VisitorProfile={name:string;interests:string;style:string};
+type QuizQuestion={question:string;choices:string[];answer:number;source:'nvidia'|'fallback'};
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML=`
   <main class="world" id="world"><div class="noise"></div></main>
@@ -15,8 +16,12 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML=`
   <div class="crosshair"></div><div class="interact-hint" id="hint"><b>E</b><span></span></div>
   <div class="controls"><div class="keys"><b class="key">W</b><b class="key">A</b><b class="key">S</b><b class="key">D</b></div><span>Move</span><div class="keys"><b class="key">Space</b><b class="key">Shift</b></div><span>Rise / descend</span><div class="keys"><b class="key">Click</b><b class="key">E</b></div><span>Discover</span></div>
   <div class="altitude"><b id="altitude">+03.5 m</b><span>Relative depth</span></div>
-  <section class="intro" id="intro"><div class="intro-inner"><div class="kicker">A living world, explained for you</div><h1>Step <em>inside.</em></h1><p class="intro-copy" id="intro-copy">Tell your NVIDIA-powered field guide what sparks your curiosity. It will shape the welcome and each discovery around you.</p><form class="profile" id="profile"><label><span>What should we call you?</span><input id="visitor-name" maxlength="40" placeholder="Explorer" autocomplete="given-name"></label><label><span>What are you curious about?</span><input id="visitor-interests" maxlength="240" placeholder="food webs, big cats, climate…"></label><label><span>How should we explain?</span><select id="visitor-style"><option value="curious">Curious & vivid</option><option value="simple">Simple & concise</option><option value="scientific">Scientific</option><option value="storylike">Like a nature story</option></select></label><button class="begin" id="begin" type="submit"><span>Personalize my journey</span><i>→</i></button><small class="profile-note" id="profile-note">Works with a graceful local fallback when NVIDIA NIM is not configured.</small></form></div></section>
-  <section class="dialogue" id="dialogue" aria-modal="true" role="dialog"><article class="dialogue-card"><button class="dialogue-close" id="dialogue-close" aria-label="Close">×</button><div class="dialogue-tag" id="dialogue-tag"></div><div class="dialogue-heading"><h3 id="dialogue-name"></h3><span class="nim-badge" id="nim-badge">Field guide</span><button class="listen" id="listen-sfx" type="button">Hear sound</button></div><p id="dialogue-fact"></p><div class="choices" id="choices"></div><p class="result" id="result"></p></article></section>`;
+  <section class="intro" id="intro">
+    <div class="intro-inner intro-stage window-card entry-stage" id="entry-stage"><div class="kicker">A living world waits</div><h1>Step <em>inside.</em></h1><p class="intro-copy">Move through forest, river, and open sky to discover how every life connects.</p><button class="begin" id="enter-profile" type="button"><span>Enter the game</span><i>→</i></button></div>
+    <div class="intro-inner intro-stage window-card profile-stage" id="profile-stage" hidden><div class="kicker">Before you explore</div><h2>Shape your field guide.</h2><p class="intro-copy">A few details help the guide connect each discovery to what interests you.</p><form class="profile" id="profile"><label><span>What should we call you?</span><input id="visitor-name" maxlength="40" placeholder="Explorer" autocomplete="given-name"></label><label><span>What are you curious about?</span><input id="visitor-interests" maxlength="240" placeholder="food webs, big cats, climate…"></label><label><span>How should we explain?</span><select id="visitor-style"><option value="curious">Curious & vivid</option><option value="simple">Simple & concise</option><option value="scientific">Scientific</option><option value="storylike">Like a nature story</option></select></label><button class="begin" id="begin" type="submit"><span>Start my exploration</span><i>→</i></button><small class="profile-note">Your field guide will adapt discoveries to your interests.</small></form></div>
+    <div class="intro-stage window-card loading-stage" id="loading-stage" role="status" aria-live="polite" hidden><div class="loading-orbit"><i></i><i></i><i></i></div><div class="kicker">Preparing your journey</div><h2>Connecting the living world<span class="loading-ellipsis" aria-hidden="true"><i></i><i></i><i></i></span></h2><p>Building a field guide around your curiosity.</p></div>
+  </section>
+   <section class="dialogue" id="dialogue" aria-modal="true" role="dialog"><article class="dialogue-card"><button class="dialogue-close" id="dialogue-close" aria-label="Close">×</button><div class="dialogue-tag" id="dialogue-tag"></div><div class="dialogue-heading"><h3 id="dialogue-name"></h3><span class="nim-badge" id="nim-badge">Field guide</span><button class="listen" id="listen-sfx" type="button">Hear sound</button></div><p id="dialogue-fact"></p><div class="choices" id="choices"></div><p class="result" id="result" role="status" aria-live="polite"></p></article></section>`;
 
 const world=document.querySelector<HTMLElement>('#world')!;
 const renderer=new T.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
@@ -92,22 +97,96 @@ const creatures:FieldObject[]=creatureSpecs.map((spec,index)=>{const object=spec
 
 const discoveries=document.querySelector('#discoveries')!;discoveries.innerHTML=creatures.map((c,i)=>`<div class="discovery" data-index="${i}" title="Undiscovered">${c.icon}</div>`).join('');
 document.querySelector('#progress-count')!.textContent=`0 / ${creatures.length}`;
-const found=new Set<number>();const keys=new Set<string>();let yaw=0,pitch=-.06,currentBiome:Biome='woodland',nearby=-1,dialogueOpen=false,started=false,musicOn=true,listenName='';
+ const found=new Set<number>();const keys=new Set<string>();let yaw=0,pitch=-.06,currentBiome:Biome='woodland',nearby=-1,dialogueOpen=false,dialogueSession=0,started=false,musicOn=true,listenName='';
 const velocity=new T.Vector3(),forward=new T.Vector3(),right=new T.Vector3();const clock=new T.Clock();
 const raycaster=new T.Raycaster();const pointer=new T.Vector2();const personalizedCopy=new Map<number,string>();
-let visitor:VisitorProfile={name:'Explorer',interests:'wildlife and ecosystems',style:'curious'};let introReady=false;
+let visitor:VisitorProfile={name:'Explorer',interests:'wildlife and ecosystems',style:'curious'};
 const zones:Record<Biome,{name:string;code:string;copy:string;color:string;fog:string}>={underwater:{name:'River Below',code:'Biome 01 · Freshwater',copy:'Descend through the surface and follow the lives hidden beneath the current.',color:'#176d7d',fog:'#145b68'},woodland:{name:'Woodland',code:'Biome 02 · Temperate',copy:'Follow the river, listen closely, and meet the lives that keep this forest in balance.',color:'#91c7c8',fog:'#8bb8a7'},sky:{name:'Open Sky',code:'Biome 03 · Canopy',copy:'Rise above the branches to see how wind, water, and migration connect distant habitats.',color:'#88c5df',fog:'#a9d2dc'}};
 function setBiome(biome:Biome){if(currentBiome===biome)return;const from=currentBiome;currentBiome=biome;if(started){if(from==='underwater'||biome==='underwater')mixer.playSplash();if(biome==='sky')mixer.playWind()}const z=zones[biome];document.querySelector('#zone-name')!.textContent=z.name;document.querySelector('#zone-code')!.textContent=z.code;document.querySelector('#zone-copy')!.textContent=z.copy;world.classList.toggle('underwater',biome==='underwater');document.querySelectorAll<HTMLButtonElement>('[data-biome]').forEach(b=>b.classList.toggle('active',b.dataset.biome===biome));}
 function travel(biome:Biome){const destinations:Record<Biome,T.Vector3>={underwater:new T.Vector3(0,-5,12),woodland:new T.Vector3(0,3.5,15),sky:new T.Vector3(0,14,16)};camera.position.copy(destinations[biome]);pitch=biome==='sky'?-0.12:0;setBiome(biome);renderer.domElement.requestPointerLock().catch(()=>{});}
 
 async function getPersonalizedText(subject?:FieldObject){const response=await fetch('/api/personalize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...visitor,subject:subject?{name:subject.name,fact:subject.fact,kind:subject.kind,biome:subject.biome}:undefined})});if(!response.ok)throw new Error('Guide unavailable');return response.json() as Promise<{text:string;source:'nvidia'|'fallback';model?:string}>}
-async function openDialogue(index:number){const c=creatures[index];dialogueOpen=true;listenName=c.name;const listen=document.querySelector<HTMLButtonElement>('#listen-sfx')!;listen.textContent=c.kind==='plant'?'Hear rustle':'Hear sound';listen.setAttribute('aria-label',`Play the ${c.name} sound`);const encounter=mixer.beginEncounter();const sfxDone=mixer.playSfx(c.name);const speakAfterSfx=(text:string)=>{void sfxDone.then(()=>{if(!mixer.isEncounter(encounter))return;void mixer.speak(text).catch(()=>{});});};if(document.pointerLockElement)document.exitPointerLock();document.querySelector('#dialogue')!.classList.add('open');document.querySelector('#dialogue-tag')!.textContent=`${c.kind==='plant'?'Flora':'Wildlife'} encounter · ${zones[c.biome].name}`;document.querySelector('#dialogue-name')!.textContent=c.name;const fact=document.querySelector('#dialogue-fact')!;fact.textContent=personalizedCopy.get(index)??'Your field guide is observing this encounter…';document.querySelector('#nim-badge')!.textContent=personalizedCopy.has(index)?'Personalized':'NVIDIA NIM · thinking';document.querySelector('#result')!.textContent='';const choices=document.querySelector('#choices')!;choices.innerHTML=c.choices.map((choice,i)=>`<button data-choice="${i}">${choice}</button>`).join('');choices.querySelectorAll<HTMLButtonElement>('button').forEach(button=>button.onclick=()=>{const selected=Number(button.dataset.choice);choices.querySelectorAll('button').forEach((b,i)=>b.classList.add(i===c.answer?'correct':i===selected?'wrong':''));const result=document.querySelector('#result')!;if(selected===c.answer){result.textContent='Field note saved · ecosystem link understood';found.add(index);const badge=document.querySelector<HTMLElement>(`.discovery[data-index="${index}"]`)!;badge.classList.add('found');badge.title=c.name;document.querySelector('#progress-count')!.textContent=`${found.size} / ${creatures.length}`;(document.querySelector('#progress-bar') as HTMLElement).style.width=`${found.size/creatures.length*100}%`;}else result.textContent='Look at the clue again and try another answer.';});if(!personalizedCopy.has(index)){try{const answer=await getPersonalizedText(c);personalizedCopy.set(index,answer.text);if(dialogueOpen&&document.querySelector('#dialogue-name')!.textContent===c.name){fact.textContent=`${answer.text} ${c.question}`;document.querySelector('#nim-badge')!.textContent=answer.source==='nvidia'?'NVIDIA NIM · personalized':'Local guide · personalized';}speakAfterSfx(`${answer.text} ${c.question}`);}catch{fact.textContent=`${c.fact} ${c.question}`;document.querySelector('#nim-badge')!.textContent='Field guide';speakAfterSfx(`${c.fact} ${c.question}`);}}else{fact.textContent=`${personalizedCopy.get(index)} ${c.question}`;speakAfterSfx(`${personalizedCopy.get(index)} ${c.question}`);}}
-function closeDialogue(){dialogueOpen=false;mixer.endEncounter();document.querySelector('#dialogue')!.classList.remove('open');}
+async function streamPersonalizedText(subject:FieldObject,onText:(text:string)=>void){
+ const response=await fetch('/api/personalize',{method:'POST',headers:{'Content-Type':'application/json','Accept':'text/event-stream'},body:JSON.stringify({...visitor,subject:{name:subject.name,fact:subject.fact,kind:subject.kind,biome:subject.biome}})});
+ if(!response.ok)throw new Error('Guide unavailable');
+ if(!response.headers.get('content-type')?.includes('text/event-stream')){const answer=await response.json() as {text:string;source:'nvidia'|'fallback';model?:string};onText(answer.text);return answer;}
+ const reader=response.body?.getReader();if(!reader)throw new Error('Guide stream unavailable');
+ const decoder=new TextDecoder();let buffer='',text='';
+ const readEvents=(final=false)=>{const events=buffer.split(/\r?\n\r?\n/);buffer=final?'':events.pop()??'';for(const event of events){for(const line of event.split(/\r?\n/)){if(!line.startsWith('data:'))continue;const payload=line.slice(5).trim();if(!payload||payload==='[DONE]')continue;try{const data=JSON.parse(payload),token=data?.choices?.[0]?.delta?.content;if(typeof token==='string'&&token){text+=token;onText(text);}}catch{/* Ignore incomplete provider metadata events. */}}}};
+ while(true){const {done,value}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});readEvents();}
+ buffer+=decoder.decode();if(buffer.trim()){buffer+='\n\n';readEvents(true);}
+ text=text.trim();if(!text)throw new Error('Guide returned no text');
+ return{text,source:'nvidia' as const};
+}
+function randomizeQuiz(quiz:QuizQuestion):QuizQuestion{
+ const choices=quiz.choices.map((label,index)=>({label,correct:index===quiz.answer}));
+ for(let i=choices.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[choices[i],choices[j]]=[choices[j],choices[i]];}
+ return{...quiz,choices:choices.map(choice=>choice.label),answer:choices.findIndex(choice=>choice.correct)};
+}
+function localRetryQuiz(subject:FieldObject,attempt:number):QuizQuestion{
+ const questions=[`Which statement about ${subject.name} matches the field note?`,`What is the best explanation of ${subject.name}'s role here?`,`Which ecological connection is true for ${subject.name}?`,`Based on what you learned, which observation about ${subject.name} is accurate?`];
+ return randomizeQuiz({question:questions[attempt%questions.length],choices:[...subject.choices],answer:subject.answer,source:'fallback'});
+}
+async function getRetryQuiz(subject:FieldObject,previousQuestions:string[],attempt:number):Promise<QuizQuestion>{
+ const response=await fetch('/api/personalize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...visitor,quiz:{name:subject.name,fact:subject.fact,kind:subject.kind,biome:subject.biome,choices:subject.choices,answer:subject.answer,previousQuestions,attempt}})});
+ if(!response.ok)throw new Error('Guide unavailable');
+ const quiz=await response.json() as QuizQuestion;
+ if(typeof quiz.question!=='string'||!Array.isArray(quiz.choices)||quiz.choices.length<2||!quiz.choices.every(choice=>typeof choice==='string')||!Number.isInteger(quiz.answer)||quiz.answer<0||quiz.answer>=quiz.choices.length)throw new Error('Invalid quiz');
+ return randomizeQuiz(quiz);
+}
+function setFieldNoteLoading(fact:Element,prefix=''){
+ fact.replaceChildren();if(prefix)fact.append(document.createTextNode(`${prefix} `));
+ const loader=document.createElement('span');loader.className='field-note-loading';loader.setAttribute('aria-label','Preparing question');loader.innerHTML='<b aria-hidden="true"><i></i><i></i><i></i></b>';fact.append(loader);fact.setAttribute('aria-busy','true');
+}
+async function openDialogue(index:number){
+ const c=creatures[index],session=++dialogueSession;dialogueOpen=true;listenName=c.name;
+ const listen=document.querySelector<HTMLButtonElement>('#listen-sfx')!;listen.textContent=c.kind==='plant'?'Hear rustle':'Hear sound';listen.setAttribute('aria-label',`Play the ${c.name} sound`);
+ const encounter=mixer.beginEncounter(),sfxDone=mixer.playSfx(c.name);
+ const speakAfterSfx=(text:string)=>{void sfxDone.then(()=>{if(mixer.isEncounter(encounter))void mixer.speak(text).catch(()=>{});});};
+ if(document.pointerLockElement)document.exitPointerLock();
+ document.querySelector('#dialogue')!.classList.add('open');
+ document.querySelector('#dialogue-tag')!.textContent=`${c.kind==='plant'?'Flora':'Wildlife'} encounter · ${zones[c.biome].name}`;
+ document.querySelector('#dialogue-name')!.textContent=c.name;
+ const fact=document.querySelector('#dialogue-fact')!,badge=document.querySelector('#nim-badge')!,choices=document.querySelector('#choices')!,result=document.querySelector('#result')!;
+ const cached=personalizedCopy.get(index);
+ let description=cached??'',attempt=0;const previousQuestions:string[]=[];
+ const isCurrent=()=>dialogueOpen&&dialogueSession===session&&document.querySelector('#dialogue-name')!.textContent===c.name;
+ const showQuiz=(quiz:QuizQuestion)=>{
+  if(!isCurrent())return;fact.removeAttribute('aria-busy');fact.textContent=`${description} ${quiz.question}`;badge.textContent=quiz.source==='nvidia'?'Personalized':'Field guide';result.textContent='';choices.replaceChildren();choices.classList.remove('loading');
+  quiz.choices.forEach((label,i)=>{const button=document.createElement('button');button.textContent=label;button.dataset.choice=String(i);button.onclick=async()=>{
+   if(i===quiz.answer){button.classList.add('correct');choices.querySelectorAll<HTMLButtonElement>('button').forEach(choice=>choice.disabled=true);result.textContent='Field note saved · ecosystem link understood';found.add(index);const discoveryBadge=document.querySelector<HTMLElement>(`.discovery[data-index="${index}"]`)!;discoveryBadge.classList.add('found');discoveryBadge.title=c.name;document.querySelector('#progress-count')!.textContent=`${found.size} / ${creatures.length}`;(document.querySelector('#progress-bar') as HTMLElement).style.width=`${found.size/creatures.length*100}%`;return;}
+   button.classList.add('wrong');choices.querySelectorAll<HTMLButtonElement>('button').forEach(choice=>choice.disabled=true);result.textContent='Not quite · preparing another question';choices.classList.add('loading');attempt+=1;setFieldNoteLoading(fact,description);
+   let next:QuizQuestion;try{next=await getRetryQuiz(c,previousQuestions,attempt);}catch{next=localRetryQuiz(c,attempt);}
+   previousQuestions.push(next.question);showQuiz(next);
+  };choices.append(button);});
+ };
+ result.textContent='';choices.classList.add('loading');setFieldNoteLoading(fact,description);badge.textContent='Field guide';
+ let quizReady=false;
+ const initialQuizPromise=getRetryQuiz(c,previousQuestions,attempt).catch(()=>localRetryQuiz(c,attempt)).then(quiz=>{quizReady=true;return quiz;});
+ if(!cached){
+  try{const answer=await streamPersonalizedText(c,partial=>{if(isCurrent()){fact.textContent=partial;badge.textContent='Writing';}});description=answer.text;personalizedCopy.set(index,answer.text);}
+  catch{description=c.fact;}
+  if(!quizReady&&isCurrent())setFieldNoteLoading(fact,description);
+ }
+ const initialQuiz=await initialQuizPromise;previousQuestions.push(initialQuiz.question);showQuiz(initialQuiz);speakAfterSfx(`${description} ${initialQuiz.question}`);
+}
+function closeDialogue(){dialogueOpen=false;dialogueSession+=1;mixer.endEncounter();document.querySelector('#dialogue')!.classList.remove('open');}
 document.querySelector('#dialogue-close')!.addEventListener('click',closeDialogue);
 document.querySelector('#listen-sfx')!.addEventListener('click',()=>{if(listenName)void mixer.playSfx(listenName)});
 document.querySelector('#dialogue')!.addEventListener('click',e=>{if(e.target===document.querySelector('#dialogue'))closeDialogue()});
 document.querySelectorAll<HTMLButtonElement>('[data-biome]').forEach(button=>button.onclick=()=>travel(button.dataset.biome as Biome));
-document.querySelector<HTMLFormElement>('#profile')!.addEventListener('submit',async event=>{event.preventDefault();if(introReady){started=true;document.querySelector('#intro')!.classList.add('hidden');return}mixer.startMusic();document.querySelector('#sound')!.textContent=musicOn?'♫':'♪';visitor={name:(document.querySelector<HTMLInputElement>('#visitor-name')!.value.trim()||'Explorer'),interests:(document.querySelector<HTMLInputElement>('#visitor-interests')!.value.trim()||'wildlife and ecosystems'),style:document.querySelector<HTMLSelectElement>('#visitor-style')!.value};const button=document.querySelector<HTMLButtonElement>('#begin')!;button.disabled=true;button.querySelector('span')!.textContent='NVIDIA is preparing your guide…';try{const answer=await getPersonalizedText();document.querySelector('#intro-copy')!.textContent=answer.text;document.querySelector('#profile-note')!.textContent=answer.source==='nvidia'?`Generated by ${answer.model}`:'Preview mode · add NVIDIA_API_KEY for live NIM generation';document.querySelector('#ai-status')!.textContent=answer.source==='nvidia'?'NVIDIA guide online':'Local guide mode';void mixer.speak(answer.text).catch(()=>{});}catch{const fallback=`Welcome, ${visitor.name}. We’ll connect every discovery to ${visitor.interests} as you explore.`;document.querySelector('#intro-copy')!.textContent=fallback;document.querySelector('#profile-note')!.textContent='The live guide is unavailable, so the local field guide stepped in.';void mixer.speak(fallback).catch(()=>{});}introReady=true;button.disabled=false;button.querySelector('span')!.textContent='Enter the ecosystem';});
+const entryStage=document.querySelector<HTMLElement>('#entry-stage')!,profileStage=document.querySelector<HTMLElement>('#profile-stage')!,loadingStage=document.querySelector<HTMLElement>('#loading-stage')!;
+document.querySelector('#enter-profile')!.addEventListener('click',()=>{entryStage.hidden=true;profileStage.hidden=false;document.querySelector<HTMLInputElement>('#visitor-name')!.focus()});
+document.querySelector<HTMLFormElement>('#profile')!.addEventListener('submit',async event=>{
+ event.preventDefault();
+ mixer.startMusic();document.querySelector('#sound')!.textContent=musicOn?'♫':'♪';
+ visitor={name:(document.querySelector<HTMLInputElement>('#visitor-name')!.value.trim()||'Explorer'),interests:(document.querySelector<HTMLInputElement>('#visitor-interests')!.value.trim()||'wildlife and ecosystems'),style:document.querySelector<HTMLSelectElement>('#visitor-style')!.value};
+ const button=document.querySelector<HTMLButtonElement>('#begin')!;button.disabled=true;profileStage.hidden=true;loadingStage.hidden=false;
+ const minimumLoadingTime=new Promise<void>(resolve=>setTimeout(resolve,900));
+ try{const answer=await getPersonalizedText();await minimumLoadingTime;document.querySelector('#ai-status')!.textContent=answer.source==='nvidia'?'Personal guide online':'Local guide mode';}
+ catch{await minimumLoadingTime;document.querySelector('#ai-status')!.textContent='Local guide mode';}
+ started=true;document.querySelector('#intro')!.classList.add('hidden');
+});
 renderer.domElement.addEventListener('click',event=>{if(!started||dialogueOpen)return;const rect=renderer.domElement.getBoundingClientRect();if(document.pointerLockElement===renderer.domElement)pointer.set(0,0);else pointer.set(((event.clientX-rect.left)/rect.width)*2-1,-((event.clientY-rect.top)/rect.height)*2+1);raycaster.setFromCamera(pointer,camera);const hit=raycaster.intersectObjects(creatures.map(c=>c.object),true).find(intersection=>intersection.object.userData.creature!==undefined);if(hit){openDialogue(Number(hit.object.userData.creature));return}renderer.domElement.requestPointerLock().catch(()=>{});});
 document.addEventListener('mousemove',event=>{if(document.pointerLockElement!==renderer.domElement||dialogueOpen)return;yaw-=event.movementX*.0022;pitch=T.MathUtils.clamp(pitch-event.movementY*.002,-Math.PI/2+.04,Math.PI/2-.04)});
 document.addEventListener('keydown',event=>{keys.add(event.code);if(event.code==='KeyE'&&nearby>=0&&!dialogueOpen)openDialogue(nearby);if(event.code==='Escape'&&dialogueOpen)closeDialogue()});document.addEventListener('keyup',event=>keys.delete(event.code));
