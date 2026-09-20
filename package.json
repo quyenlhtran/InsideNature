@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --env-file=.env server.mjs",
+    "dev": "node --watch --watch-path=server --watch-path=server.mjs --watch-path=app.config.mjs --env-file=.env server.mjs",
     "build": "tsc --noEmit && vite build",
     "check": "tsc --noEmit",
     "test": "node --test server/ai/scene.test.mjs",

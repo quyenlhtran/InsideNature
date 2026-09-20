@@ -85,3 +85,12 @@ test('uses Gemini as an independent single-call structured-output path', async (
   assert.equal(result.requests[0].body.response_format.mime_type, 'application/json');
   assert.equal(result.body.scene.objects[0].shape, 'stratum');
 });
+
+test('reports a Gemini rate limit as a provider failure rather than a JSON error', async () => {
+  const rateLimit = new Response('{"error":{"message":"quota reached"}}', {status: 429});
+  const result = await invokeWith({provider: 'gemini', responses: [rateLimit]});
+  assert.equal(result.status, 429);
+  assert.equal(result.body.code, 'PROVIDER_RATE_LIMIT');
+  assert.match(result.body.error, /usage limit/i);
+  assert.doesNotMatch(result.body.error, /JSON|syntax|position|Expected/i);
+});
