@@ -42,6 +42,7 @@ async function invokeWith({provider = 'nvidia', responses}) {
     await new Promise(resolve => createSceneHandler({
       apiKey: 'nvidia-key', nemotronModel: 'nemotron', textModel: 'compiler',
       geminiApiKey: 'gemini-key', geminiModel: 'gemini-pro',
+      openRouterKey: 'openrouter-key', openRouterModel: 'openrouter/auto',
     })(req, {
       writeHead(value) { status = value; },
       end(value) { payload = String(value || ''); resolve(); },
@@ -93,4 +94,15 @@ test('reports a Gemini rate limit as a provider failure rather than a JSON error
   assert.equal(result.body.code, 'PROVIDER_RATE_LIMIT');
   assert.match(result.body.error, /usage limit/i);
   assert.doesNotMatch(result.body.error, /JSON|syntax|position|Expected/i);
+});
+
+test('uses OpenRouter automatic routing for the scene task', async () => {
+  const result = await invokeWith({provider: 'openrouter', responses: [nvidiaCompletion(JSON.stringify(validScene))]});
+  assert.equal(result.status, 200);
+  assert.equal(result.body.source, 'openrouter');
+  assert.equal(result.body.model, 'openrouter/auto');
+  assert.equal(result.requests.length, 1);
+  assert.match(result.requests[0].url, /openrouter\.ai\/api\/v1\/chat\/completions/);
+  assert.equal(result.requests[0].body.model, 'openrouter/auto');
+  assert.equal(result.requests[0].body.messages[1].content[1].type, 'image_url');
 });

@@ -22,8 +22,10 @@ class ProviderRequestError extends Error {
 }
 
 function sceneFailure(provider, error) {
-  const label = provider === 'gemini' ? 'Gemini' : 'NVIDIA Nemotron';
-  const alternative = provider === 'gemini' ? 'NVIDIA Nemotron' : 'Gemini';
+  const labels = {gemini: 'Gemini', openrouter: 'OpenRouter open-source model', nvidia: 'NVIDIA Nemotron'};
+  const alternatives = {gemini: 'NVIDIA Nemotron', openrouter: 'NVIDIA Nemotron or Gemini', nvidia: 'Gemini or the OpenRouter model'};
+  const label = labels[provider] || 'Scene model';
+  const alternative = alternatives[provider] || 'another model';
   if (error instanceof ProviderRequestError) {
     if (error.status === 429) return {
       status: 429,
@@ -135,6 +137,50 @@ async function generateWithGemini({apiKey, model, image, filename}) {
   const renderStrategy = scene.presentation === 'model' ? 'labeled-model' : scene.presentation;
   return {
     source: 'gemini',
+    model,
+    pipeline: {planner: model, compiler: model, renderStrategy, compilation: 'first-pass'},
+    scene,
+  };
+}
+
+async function generateWithOpenRouter({apiKey, model, image, filename}) {
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'HTTP-Referer': 'http://localhost:3018',
+      'X-Title': 'Inside Nature',
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {role: 'system', content: SCENE_SYSTEM_PROMPT},
+        {role: 'user', content: [
+          {type: 'text', text: buildGeminiScenePrompt(filename)},
+          {type: 'image_url', image_url: {url: image}},
+        ]},
+      ],
+      temperature: 0,
+      response_format: {
+        type: 'json_schema',
+        json_schema: {name: 'inside_nature_scene', strict: true, schema: SCENE_JSON_SCHEMA},
+      },
+    }),
+  });
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 300);
+    throw new ProviderRequestError('OpenRouter', response.status, detail);
+  }
+  const data = await response.json();
+  const content = data?.choices?.[0]?.message?.content;
+  if (typeof content !== 'string' || !content.trim()) throw new Error('OpenRouter returned no structured scene');
+  const scene = validateScene(parseJson(content));
+  validateSceneSemantics(scene, `${filename} ${scene.title} ${scene.summary}`);
+  const renderStrategy = scene.presentation === 'model' ? 'labeled-model' : scene.presentation;
+  return {
+    source: 'openrouter',
     model,
     pipeline: {planner: model, compiler: model, renderStrategy, compilation: 'first-pass'},
     scene,
@@ -266,13 +312,14 @@ function fallbackScene(filename, analysis = '') {
   });
 }
 
-export function createSceneHandler({apiKey, nemotronModel, textModel, geminiApiKey, geminiModel}) {
+export function createSceneHandler({apiKey, nemotronModel, textModel, geminiApiKey, geminiModel, openRouterKey, openRouterModel}) {
   return async function handleScene(req, res) {
     try {
       const body = await readJson(req, 6_500_000);
       const image = String(body.image || '');
       const filename = text(body.filename, 120, 'uploaded image');
-      const provider = body.provider === 'gemini' ? 'gemini' : 'nvidia';
+      const requestedProvider = String(body.provider || '').trim().toLowerCase();
+      const provider = requestedProvider === 'gemini' || requestedProvider === 'openrouter' ? requestedProvider : 'nvidia';
       if (!/^data:image\/(png|jpeg);base64,/i.test(image)) {
         return sendJson(res, 400, {error: 'Upload a PNG or JPEG image'});
       }
@@ -286,6 +333,20 @@ export function createSceneHandler({apiKey, nemotronModel, textModel, geminiApiK
           return sendJson(res, 200, await generateWithGemini({apiKey: geminiApiKey, model: geminiModel, image, filename}));
         } catch (error) {
           console.error('[scene:gemini] conversion failed:', error instanceof Error ? error.message : error);
+          const failure = sceneFailure(provider, error);
+          return sendJson(res, failure.status, {provider, code: failure.code, error: failure.error});
+        }
+      }
+
+      if (provider === 'openrouter') {
+        if (!openRouterKey) return sendJson(res, 503, {
+          provider,
+          error: 'The OpenRouter open-source model is not connected yet. Add OPENROUTER_API_KEY, or try another model.',
+        });
+        try {
+          return sendJson(res, 200, await generateWithOpenRouter({apiKey: openRouterKey, model: openRouterModel, image, filename}));
+        } catch (error) {
+          console.error('[scene:openrouter] conversion failed:', error instanceof Error ? error.message : error);
           const failure = sceneFailure(provider, error);
           return sendJson(res, failure.status, {provider, code: failure.code, error: failure.error});
         }
