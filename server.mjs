@@ -1,8 +1,9 @@
 import { createServer as createHttpServer } from 'node:http';
 import { createServer as createViteServer } from 'vite';
-import { APP_HOST, APP_PORT, NVIDIA_MODEL } from './app.config.mjs';
+import { APP_HOST, APP_PORT, NVIDIA_MODEL, ELEVENLABS_VOICE_ID } from './app.config.mjs';
 
 const apiKey = process.env.NVIDIA_API_KEY;
+const elevenLabsKey = process.env.ELEVENLABS_API_KEY || process.env.ELEVEN_LABS_API_KEY;
 
 const vite = await createViteServer({
   server: { middlewareMode: true },
@@ -145,6 +146,49 @@ createHttpServer(async (req, res) => {
     }
     return;
   }
+
+  if (req.method === 'POST' && req.url === '/api/speak') {
+    try {
+      const body = await readJson(req);
+      const text = String(body.text || '').trim().slice(0, 800);
+      if (!text) {
+        return send(res, 400, { error: 'text is required' });
+      }
+      if (!elevenLabsKey) {
+        return send(res, 502, { error: 'ELEVENLABS_API_KEY is not set' });
+      }
+
+      const response = await fetch(
+        `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}?output_format=mp3_44100_128`,
+        {
+          method: 'POST',
+          headers: {
+            'xi-api-key': elevenLabsKey,
+            'Content-Type': 'application/json',
+            Accept: 'audio/mpeg',
+          },
+          body: JSON.stringify({
+            text,
+            model_id: 'eleven_multilingual_v2',
+          }),
+        },
+      );
+      if (!response.ok) {
+        const detail = (await response.text()).slice(0, 300);
+        throw new Error(`ElevenLabs TTS returned ${response.status}: ${detail}`);
+      }
+      const audio = Buffer.from(await response.arrayBuffer());
+      res.writeHead(200, {
+        'Content-Type': 'audio/mpeg',
+        'Content-Length': String(audio.length),
+      });
+      res.end(audio);
+    } catch (error) {
+      send(res, 502, { error: error instanceof Error ? error.message : 'Speech failed' });
+    }
+    return;
+  }
+
   vite.middlewares(req, res, () => {
     res.statusCode = 404;
     res.end('Not found');
@@ -152,4 +196,5 @@ createHttpServer(async (req, res) => {
 }).listen(APP_PORT, APP_HOST, () => {
   console.log(`Inside Nature: http://localhost:${APP_PORT}`);
   console.log(apiKey ? `NVIDIA NIM enabled (${NVIDIA_MODEL})` : 'NVIDIA_API_KEY not set; using local fallback copy');
+  console.log(elevenLabsKey ? `ElevenLabs speak enabled (${ELEVENLABS_VOICE_ID})` : 'ELEVENLABS_API_KEY not set; /api/speak disabled');
 });
