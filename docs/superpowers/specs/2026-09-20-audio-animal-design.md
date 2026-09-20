@@ -18,7 +18,7 @@ Approved product design for branch `quynh/audio-animal`.
 | Layer | How it is produced | Production needs key? |
 |---|---|---|
 | Music + animal SFX + plant rustle | Local `npm run generate-audio` → `public/audio/*.mp3` | No |
-| Spoken NVIDIA/fallback text | `POST /api/speak` at play time | Yes, `ELEVENLABS_API_KEY` |
+| Spoken NVIDIA/fallback text | `POST /api/speak` at play time | Yes, `ELEVEN_LABS_API_KEY` |
 
 NVIDIA stays `POST /api/personalize`. Keys never go to the browser bundle.
 
@@ -52,7 +52,7 @@ Use a fixed voice id from `app.config.mjs` (non-secret). Header `xi-api-key`.
 
 `scripts/generate-audio.mjs` + `package.json` script `generate-audio`.
 
-- Reads `ELEVENLABS_API_KEY` from env
+- Reads `ELEVEN_LABS_API_KEY` from env
 - Calls ElevenLabs sound-generation (and music if available; otherwise a longer SFX prompt for a loopable bed)
 - Writes the MP3s above; skip existing files unless `--force`
 

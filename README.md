@@ -12,7 +12,7 @@ npm run dev
 
 Open `http://localhost:3018`.
 
-Copy `.env.example` to `.env` and add `NVIDIA_API_KEY` (and `ELEVENLABS_API_KEY`
+Copy `.env.example` to `.env` and add `NVIDIA_API_KEY` (and `ELEVEN_LABS_API_KEY`
 if you want spoken guide audio). The real `.env` file is ignored by Git.
 Non-secret settings such as the server port, model name, and ElevenLabs voice
 id live in `app.config.mjs`.
@@ -40,6 +40,6 @@ npm run generate-audio
 npm run generate-audio -- --force
 ```
 
-`npm run generate-audio` runs `node --env-file=.env scripts/generate-audio.mjs`, so `ELEVENLABS_API_KEY` must be in `.env`. Existing files are skipped unless you pass `--force`.
+`npm run generate-audio` runs `node --env-file=.env scripts/generate-audio.mjs`, so `ELEVEN_LABS_API_KEY` must be in `.env`. Existing files are skipped unless you pass `--force`.
 
-Production needs `ELEVENLABS_API_KEY` only for `POST /api/speak` (spoken NVIDIA/fallback text). SFX and music are committed/served as static files and do not call ElevenLabs at runtime.
+Production needs `ELEVEN_LABS_API_KEY` only for `POST /api/speak` (spoken NVIDIA/fallback text). SFX and music are committed/served as static files and do not call ElevenLabs at runtime.
