@@ -2,11 +2,10 @@ import * as T from 'three';
 import {mergeGeometries} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import '../ui/styles.css';
 import * as mixer from '../audio/mixer.ts';
+import * as guide from '../ai/guide.ts';
 
 type Biome='underwater'|'woodland'|'sky';
 type FieldObject={name:string;icon:string;kind:'animal'|'plant';biome:Biome;fact:string;question:string;choices:string[];answer:number;object:T.Group;home:T.Vector3;phase:number};
-type VisitorProfile={name:string;interests:string;style:string};
-type QuizQuestion={question:string;choices:string[];answer:number;source:'nvidia'|'fallback'};
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML=`
   <main class="world" id="world"><div class="noise"></div></main>
@@ -247,40 +246,11 @@ document.querySelector('#progress-count')!.textContent=`0 / ${creatures.length}`
  const found=new Set<number>();const keys=new Set<string>();let yaw=0,pitch=-.06,currentBiome:Biome='woodland',nearby=-1,dialogueOpen=false,helpOpen=false,dialogueSession=0,started=false,musicOn=true,listenName='';
 const velocity=new T.Vector3(),forward=new T.Vector3(),right=new T.Vector3();const clock=new T.Clock();
 const raycaster=new T.Raycaster();const pointer=new T.Vector2();const personalizedCopy=new Map<number,string>();
-let visitor:VisitorProfile={name:'Explorer',interests:'wildlife and ecosystems',style:'curious'};
+let visitor:guide.VisitorProfile={name:'Explorer',interests:'wildlife and ecosystems',style:'curious'};
 const zones:Record<Biome,{name:string;code:string;copy:string;color:string;fog:string}>={underwater:{name:'River Below',code:'Biome 01 · Freshwater',copy:'Descend through the surface and follow the lives hidden beneath the current.',color:'#176d7d',fog:'#145b68'},woodland:{name:'Woodland',code:'Biome 02 · Temperate',copy:'Follow the river, listen closely, and meet the lives that keep this forest in balance.',color:'#91c7c8',fog:'#8bb8a7'},sky:{name:'Open Sky',code:'Biome 03 · Canopy',copy:'Rise above the branches to see how wind, water, and migration connect distant habitats.',color:'#88c5df',fog:'#a9d2dc'}};
 function setBiome(biome:Biome){if(currentBiome===biome)return;const from=currentBiome;currentBiome=biome;if(started){if(from==='underwater'||biome==='underwater')mixer.playSplash();if(biome==='sky')mixer.playWind()}const z=zones[biome];document.querySelector('#zone-name')!.textContent=z.name;document.querySelector('#zone-code')!.textContent=z.code;document.querySelector('#zone-copy')!.textContent=z.copy;world.classList.toggle('underwater',biome==='underwater');document.querySelectorAll<HTMLButtonElement>('[data-biome]').forEach(b=>b.classList.toggle('active',b.dataset.biome===biome));}
 function travel(biome:Biome){const destinations:Record<Biome,T.Vector3>={underwater:new T.Vector3(0,-5,12),woodland:new T.Vector3(0,3.5,15),sky:new T.Vector3(0,14,16)};camera.position.copy(destinations[biome]);pitch=biome==='sky'?-0.12:0;setBiome(biome);renderer.domElement.requestPointerLock().catch(()=>{});}
 
-async function getPersonalizedText(subject?:FieldObject){const response=await fetch('/api/personalize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...visitor,subject:subject?{name:subject.name,fact:subject.fact,kind:subject.kind,biome:subject.biome}:undefined})});if(!response.ok)throw new Error('Guide unavailable');return response.json() as Promise<{text:string;source:'nvidia'|'fallback';model?:string}>}
-async function streamPersonalizedText(subject:FieldObject,onText:(text:string)=>void){
- const response=await fetch('/api/personalize',{method:'POST',headers:{'Content-Type':'application/json','Accept':'text/event-stream'},body:JSON.stringify({...visitor,subject:{name:subject.name,fact:subject.fact,kind:subject.kind,biome:subject.biome}})});
- if(!response.ok)throw new Error('Guide unavailable');
- if(!response.headers.get('content-type')?.includes('text/event-stream')){const answer=await response.json() as {text:string;source:'nvidia'|'fallback';model?:string};onText(answer.text);return answer;}
- const reader=response.body?.getReader();if(!reader)throw new Error('Guide stream unavailable');
- const decoder=new TextDecoder();let buffer='',text='';
- const readEvents=(final=false)=>{const events=buffer.split(/\r?\n\r?\n/);buffer=final?'':events.pop()??'';for(const event of events){for(const line of event.split(/\r?\n/)){if(!line.startsWith('data:'))continue;const payload=line.slice(5).trim();if(!payload||payload==='[DONE]')continue;try{const data=JSON.parse(payload),token=data?.choices?.[0]?.delta?.content;if(typeof token==='string'&&token){text+=token;onText(text);}}catch{/* Ignore incomplete provider metadata events. */}}}};
- while(true){const {done,value}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});readEvents();}
- buffer+=decoder.decode();if(buffer.trim()){buffer+='\n\n';readEvents(true);}
- text=text.trim();if(!text)throw new Error('Guide returned no text');
- return{text,source:'nvidia' as const};
-}
-function randomizeQuiz(quiz:QuizQuestion):QuizQuestion{
- const choices=quiz.choices.map((label,index)=>({label,correct:index===quiz.answer}));
- for(let i=choices.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[choices[i],choices[j]]=[choices[j],choices[i]];}
- return{...quiz,choices:choices.map(choice=>choice.label),answer:choices.findIndex(choice=>choice.correct)};
-}
-function localRetryQuiz(subject:FieldObject,attempt:number):QuizQuestion{
- const questions=[`Which fact about ${subject.name} is true?`,`How does ${subject.name} help its home?`,`What is ${subject.name} connected to?`,`What did you learn about ${subject.name}?`];
- return randomizeQuiz({question:questions[attempt%questions.length],choices:[...subject.choices],answer:subject.answer,source:'fallback'});
-}
-async function getRetryQuiz(subject:FieldObject,previousQuestions:string[],attempt:number):Promise<QuizQuestion>{
- const response=await fetch('/api/personalize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...visitor,quiz:{name:subject.name,fact:subject.fact,kind:subject.kind,biome:subject.biome,choices:subject.choices,answer:subject.answer,previousQuestions,attempt}})});
- if(!response.ok)throw new Error('Guide unavailable');
- const quiz=await response.json() as QuizQuestion;
- if(typeof quiz.question!=='string'||!Array.isArray(quiz.choices)||quiz.choices.length<2||!quiz.choices.every(choice=>typeof choice==='string')||!Number.isInteger(quiz.answer)||quiz.answer<0||quiz.answer>=quiz.choices.length)throw new Error('Invalid quiz');
- return randomizeQuiz(quiz);
-}
 function setFieldNoteLoading(fact:Element,prefix=''){
  fact.replaceChildren();if(prefix)fact.append(document.createTextNode(`${prefix} `));
  const loader=document.createElement('span');loader.className='field-note-loading';loader.setAttribute('aria-label','Preparing question');loader.innerHTML='<b aria-hidden="true"><i></i><i></i><i></i></b>';fact.append(loader);fact.setAttribute('aria-busy','true');
@@ -298,20 +268,20 @@ async function openDialogue(index:number){
  const cached=personalizedCopy.get(index);
  let description=cached??'',attempt=0;const previousQuestions:string[]=[];
  const isCurrent=()=>dialogueOpen&&dialogueSession===session&&document.querySelector('#dialogue-name')!.textContent===c.name;
- const showQuiz=(quiz:QuizQuestion)=>{
+ const showQuiz=(quiz:guide.QuizQuestion)=>{
   if(!isCurrent())return;fact.removeAttribute('aria-busy');fact.textContent=`${description} ${quiz.question}`;badge.textContent=quiz.source==='nvidia'?'Personalized':'Field guide';result.textContent='';choices.replaceChildren();choices.classList.remove('loading');
   quiz.choices.forEach((label,i)=>{const button=document.createElement('button');button.textContent=label;button.dataset.choice=String(i);button.onclick=async()=>{
    if(i===quiz.answer){button.classList.add('correct');choices.querySelectorAll<HTMLButtonElement>('button').forEach(choice=>choice.disabled=true);result.textContent='Correct · ecosystem link understood';found.add(index);markFound(index);document.querySelector('#progress-count')!.textContent=`${found.size} / ${creatures.length}`;(document.querySelector('#progress-bar') as HTMLElement).style.width=`${found.size/creatures.length*100}%`;return;}
    button.classList.add('wrong');choices.querySelectorAll<HTMLButtonElement>('button').forEach(choice=>choice.disabled=true);result.textContent='Not quite · preparing another question';choices.classList.add('loading');attempt+=1;setFieldNoteLoading(fact,description);
-   let next:QuizQuestion;try{next=await getRetryQuiz(c,previousQuestions,attempt);}catch{next=localRetryQuiz(c,attempt);}
+   let next:guide.QuizQuestion;try{next=await guide.getRetryQuiz(visitor,c,previousQuestions,attempt);}catch{next=guide.localRetryQuiz(c,attempt);}
    previousQuestions.push(next.question);showQuiz(next);
   };choices.append(button);});
  };
  result.textContent='';choices.classList.add('loading');setFieldNoteLoading(fact,description);badge.textContent='Field guide';
  let quizReady=false;
- const initialQuizPromise=getRetryQuiz(c,previousQuestions,attempt).catch(()=>localRetryQuiz(c,attempt)).then(quiz=>{quizReady=true;return quiz;});
+ const initialQuizPromise=guide.getRetryQuiz(visitor,c,previousQuestions,attempt).catch(()=>guide.localRetryQuiz(c,attempt)).then(quiz=>{quizReady=true;return quiz;});
  if(!cached){
-  try{const answer=await streamPersonalizedText(c,partial=>{if(isCurrent()){fact.textContent=partial;badge.textContent='Writing';}});description=answer.text;personalizedCopy.set(index,answer.text);}
+  try{const answer=await guide.streamPersonalizedText(visitor,c,partial=>{if(isCurrent()){fact.textContent=partial;badge.textContent='Writing';}});description=answer.text;personalizedCopy.set(index,answer.text);}
   catch{description=c.fact;}
   if(!quizReady&&isCurrent())setFieldNoteLoading(fact,description);
  }
@@ -335,8 +305,8 @@ document.querySelector<HTMLFormElement>('#profile')!.addEventListener('submit',a
  visitor={name:(document.querySelector<HTMLInputElement>('#visitor-name')!.value.trim()||'Explorer'),interests:(document.querySelector<HTMLInputElement>('#visitor-interests')!.value.trim()||'wildlife and ecosystems'),style:document.querySelector<HTMLSelectElement>('#visitor-style')!.value};
  const button=document.querySelector<HTMLButtonElement>('#begin')!;button.disabled=true;profileStage.hidden=true;loadingStage.hidden=false;
  const minimumLoadingTime=new Promise<void>(resolve=>setTimeout(resolve,900));
- try{const answer=await getPersonalizedText();await minimumLoadingTime;document.querySelector('#ai-status')!.textContent=answer.source==='nvidia'?'Personal guide online':'Local guide mode';void mixer.speak(answer.text).catch(()=>{});}
- catch{await minimumLoadingTime;document.querySelector('#ai-status')!.textContent='Local guide mode';void mixer.speak(`Welcome, ${visitor.name}. We’ll connect every discovery to ${visitor.interests} as you explore.`).catch(()=>{});}
+ try{const answer=await guide.getPersonalizedText(visitor);await minimumLoadingTime;document.querySelector('#ai-status')!.textContent=answer.source==='nvidia'?'Personal guide online':'Local guide mode';void mixer.speak(answer.text).catch(()=>{});}
+ catch{await minimumLoadingTime;document.querySelector('#ai-status')!.textContent='Local guide mode';void mixer.speak(guide.localWelcome(visitor)).catch(()=>{});}
  started=true;document.querySelector('#intro')!.classList.add('hidden');
 });
 renderer.domElement.addEventListener('click',event=>{if(!started||dialogueOpen||helpOpen)return;const rect=renderer.domElement.getBoundingClientRect();if(document.pointerLockElement===renderer.domElement)pointer.set(0,0);else pointer.set(((event.clientX-rect.left)/rect.width)*2-1,-((event.clientY-rect.top)/rect.height)*2+1);raycaster.setFromCamera(pointer,camera);const hit=raycaster.intersectObjects(creatures.map(c=>c.object),true).find(intersection=>intersection.object.userData.creature!==undefined);if(hit){openDialogue(Number(hit.object.userData.creature));return}renderer.domElement.requestPointerLock().catch(()=>{});});
