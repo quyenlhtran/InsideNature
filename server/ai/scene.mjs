@@ -27,6 +27,11 @@ function sceneFailure(provider, error) {
   const label = labels[provider] || 'Scene model';
   const alternative = alternatives[provider] || 'another model';
   if (error instanceof ProviderRequestError) {
+    if (error.status === 503 && /resourceexhausted|worker local total request limit|temporarily unavailable/i.test(error.message)) return {
+      status: 503,
+      code: 'PROVIDER_CAPACITY',
+      error: `${label} is temporarily at capacity. Wait a moment and try again, or try ${alternative}. Your picture is still selected.`,
+    };
     if (error.status === 429) return {
       status: 429,
       code: 'PROVIDER_RATE_LIMIT',
@@ -312,7 +317,7 @@ function fallbackScene(filename, analysis = '') {
   });
 }
 
-export function createSceneHandler({apiKey, nemotronModel, textModel, geminiApiKey, geminiModel, openRouterKey, openRouterModel}) {
+export function createSceneHandler({apiKey, visionModel, textModel, geminiApiKey, geminiModel, openRouterKey, openRouterModel}) {
   return async function handleScene(req, res) {
     try {
       const body = await readJson(req, 6_500_000);
@@ -354,7 +359,7 @@ export function createSceneHandler({apiKey, nemotronModel, textModel, geminiApiK
 
       if (!apiKey) return sendJson(res, 503, {
         provider,
-        error: 'NVIDIA Nemotron is not connected yet. Add NVIDIA_API_KEY, or try Gemini.',
+          error: 'NVIDIA Nemotron is not connected yet. Add NVIDIA_API_KEY, or try Gemini.',
       });
 
       try {
@@ -362,7 +367,7 @@ export function createSceneHandler({apiKey, nemotronModel, textModel, geminiApiK
           method: 'POST',
           headers: {Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json'},
           body: JSON.stringify({
-            model: nemotronModel,
+            model: visionModel,
             messages: [
               {role: 'system', content: NEMOTRON_VISUAL_PLANNER_SYSTEM_PROMPT},
               {role: 'user', content: [
@@ -395,8 +400,8 @@ export function createSceneHandler({apiKey, nemotronModel, textModel, geminiApiK
         const scene = validateSceneSemantics(validateScene(parseJson(compiled.content), defaultPresentation), analysis);
         return sendJson(res, 200, {
           source: 'nvidia',
-          model: nemotronModel,
-          pipeline: {planner: nemotronModel, compiler: textModel, renderStrategy, compilation: 'first-pass'},
+          model: textModel,
+          pipeline: {planner: visionModel, compiler: textModel, renderStrategy, compilation: 'first-pass'},
           scene,
         });
       } catch (error) {

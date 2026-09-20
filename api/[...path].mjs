@@ -5,7 +5,7 @@ import {
   ELEVENLABS_VOICE_ID,
   GEMINI_MODEL,
   NVIDIA_MODEL,
-  NVIDIA_NEMOTRON_MODEL,
+  NVIDIA_NEMOTRON_VISION_MODEL,
   OPENROUTER_SCENE_MODEL,
 } from '../app.config.mjs';
 
@@ -17,7 +17,7 @@ const handleGuide = createGuideHandler({
 });
 const handleScene = createSceneHandler({
   apiKey: cleanSecret(process.env.NVIDIA_API_KEY),
-  nemotronModel: NVIDIA_NEMOTRON_MODEL,
+  visionModel: NVIDIA_NEMOTRON_VISION_MODEL,
   textModel: NVIDIA_MODEL,
   geminiApiKey: cleanSecret(process.env.GEMINI_API_KEY),
   geminiModel: GEMINI_MODEL,

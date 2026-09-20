@@ -40,7 +40,7 @@ async function invokeWith({provider = 'nvidia', responses}) {
     let status = 0;
     let payload = '';
     await new Promise(resolve => createSceneHandler({
-      apiKey: 'nvidia-key', nemotronModel: 'nemotron', textModel: 'compiler',
+      apiKey: 'nvidia-key', visionModel: 'vision', textModel: 'compiler',
       geminiApiKey: 'gemini-key', geminiModel: 'gemini-pro',
       openRouterKey: 'openrouter-key', openRouterModel: 'openrouter/auto',
     })(req, {
@@ -94,6 +94,14 @@ test('reports a Gemini rate limit as a provider failure rather than a JSON error
   assert.equal(result.body.code, 'PROVIDER_RATE_LIMIT');
   assert.match(result.body.error, /usage limit/i);
   assert.doesNotMatch(result.body.error, /JSON|syntax|position|Expected/i);
+});
+
+test('reports NVIDIA worker capacity separately from a generic outage', async () => {
+  const capacity = new Response('{"error":{"message":"ResourceExhausted: Worker local total request limit reached (1256/16)"}}', {status: 503});
+  const result = await invokeWith({responses: [capacity]});
+  assert.equal(result.status, 503);
+  assert.equal(result.body.code, 'PROVIDER_CAPACITY');
+  assert.match(result.body.error, /temporarily at capacity|try Gemini/i);
 });
 
 test('uses OpenRouter automatic routing for the scene task', async () => {

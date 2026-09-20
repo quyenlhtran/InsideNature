@@ -51,7 +51,7 @@ export function buildSceneAnalysisPrompt(filename = 'uploaded image') {
 }
 
 export function buildSceneFromAnalysisPrompt(filename, analysis, renderStrategy) {
-  return `${buildScenePrompt(filename)}\n\nNVIDIA Nemotron inspected the image and selected the ${renderStrategy} rendering strategy. Follow that strategy closely. Its complete visual plan is below:\n\n${String(analysis)}\n\nCompile the plan into the required JSON now. Use a different, meaningful id for every object, and make every label objectId match one of those ids. Preserve the important spatial relationships identified by Nemotron.`;
+  return `${buildScenePrompt(filename)}\n\nThe vision model inspected the image and selected the ${renderStrategy} rendering strategy. Follow that strategy closely. Its complete visual plan is below:\n\n${String(analysis)}\n\nCompile the plan into the required JSON now. Use a different, meaningful id for every object, and make every label objectId match one of those ids. Preserve the important spatial relationships identified by the vision model.`;
 }
 
 export function buildGeminiScenePrompt(filename = 'uploaded image') {

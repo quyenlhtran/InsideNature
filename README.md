@@ -72,7 +72,7 @@ Browser (Vite + TypeScript + Three.js)
 Node server (server.mjs)
   ├─ POST /api/personalize ─ NVIDIA NIM text guide (streaming)
   ├─ POST /api/scene ─ image → plan → validated SceneSpec
-  │      ├─ NVIDIA Nemotron (visual plan) → Nemotron 3.5 Lightning (scene compile)
+  │      ├─ NVIDIA Nemotron Omni (visual plan) → Nemotron 3.5 Lightning (scene compile)
   │      └─ Google Gemini (direct image → structured scene)
   └─ POST /api/speak ─ ElevenLabs text-to-speech
 ```
